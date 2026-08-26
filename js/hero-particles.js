@@ -36,7 +36,7 @@
   var driftDamping = 0.996;
   var rafId = 0;
   var time = 0;
-  var effectReady = false;
+  var particlesReady = false;
   var heroRingColor = "#9fcc19";
   var activeBlendSection = null;
 
@@ -698,21 +698,21 @@
     }
   }
 
-  function revealEffect() {
-    if (effectReady) return;
-    effectReady = true;
+  function revealParticles() {
+    if (particlesReady) return;
+    particlesReady = true;
     if (particlesLayer) particlesLayer.classList.add("is-revealed");
-    ring.classList.add("is-ready");
-    updateRingBlendColor(mouse.clientX, mouse.clientY);
-    loop();
-    if (mouse.visible) ring.classList.add("is-visible");
   }
 
   function loop() {
     time += 0.008;
     updateCursorMotion();
-    updateParticles();
-    draw();
+
+    if (particlesReady) {
+      updateParticles();
+      draw();
+    }
+
     rafId = window.requestAnimationFrame(loop);
   }
 
@@ -725,7 +725,7 @@
       mouse.visible = true;
       cursorClient.x = event.clientX;
       cursorClient.y = event.clientY;
-      if (effectReady) ring.classList.add("is-visible");
+      ring.classList.add("is-visible");
     }
   });
 
@@ -737,14 +737,16 @@
 
   window.addEventListener("resize", resize);
   resize();
+  ring.classList.add("is-ready");
+  loop();
 
-  document.addEventListener("hero-typewriter-complete", revealEffect);
+  document.addEventListener("hero-typewriter-complete", revealParticles);
 
   document.addEventListener("visibilitychange", function () {
     if (document.hidden) {
       window.cancelAnimationFrame(rafId);
       return;
     }
-    if (effectReady) loop();
+    loop();
   });
 })();
