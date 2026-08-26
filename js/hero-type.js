@@ -17,6 +17,10 @@
     { type: "text", value: "." }
   ];
 
+  function notifyComplete() {
+    document.dispatchEvent(new CustomEvent("hero-typewriter-complete"));
+  }
+
   function renderFull() {
     typewriter.innerHTML = "";
     parts.forEach(function (part) {
@@ -45,6 +49,7 @@
 
   if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
     renderFull();
+    notifyComplete();
     return;
   }
 
@@ -128,9 +133,19 @@
 
   function drawUnderlines() {
     var underlines = typewriter.querySelectorAll(".underline");
+    var lastIndex = underlines.length - 1;
+
+    if (lastIndex < 0) {
+      notifyComplete();
+      return;
+    }
+
     underlines.forEach(function (el, index) {
       setTimeout(function () {
         el.classList.add("is-drawn");
+        if (index === lastIndex) {
+          setTimeout(notifyComplete, 260);
+        }
       }, 180 + index * 220);
     });
   }
