@@ -37,6 +37,8 @@
   var rafId = 0;
   var time = 0;
   var effectReady = false;
+  var heroRingColor = "#9fcc19";
+  var activeBlendSection = null;
 
   function rand(min, max) {
     return min + Math.random() * (max - min);
@@ -244,6 +246,79 @@
     ring.style.top = y + "px";
   }
 
+  function parseRgb(color) {
+    var match = color.match(/rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/i);
+    if (!match) return null;
+    return {
+      r: Number(match[1]),
+      g: Number(match[2]),
+      b: Number(match[3])
+    };
+  }
+
+  function getBackgroundRgb(el) {
+    var node = el;
+    var bg;
+    var rgb;
+
+    while (node && node !== document.documentElement) {
+      bg = window.getComputedStyle(node).backgroundColor;
+      rgb = parseRgb(bg);
+      if (rgb && bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent") return rgb;
+      node = node.parentElement;
+    }
+
+    return { r: 255, g: 255, b: 255 };
+  }
+
+  function isHeroSection(section) {
+    return section && section.id === "HomeHero";
+  }
+
+  function rgbToCss(rgb) {
+    return "rgb(" + Math.round(rgb.r) + ", " + Math.round(rgb.g) + ", " + Math.round(rgb.b) + ")";
+  }
+
+  function getSectionAt(clientX, clientY) {
+    var elements = document.elementsFromPoint(clientX, clientY);
+    var i;
+    var el;
+
+    for (i = 0; i < elements.length; i += 1) {
+      el = elements[i];
+      if (
+        el.classList &&
+        (el.classList.contains("hero-section") || el.classList.contains("home-section"))
+      ) {
+        return el;
+      }
+    }
+
+    return null;
+  }
+
+  function updateRingBlendColor(clientX, clientY) {
+    var section = getSectionAt(clientX, clientY);
+    var bg;
+
+    if (!section) section = hero;
+    if (section === activeBlendSection) return;
+
+    activeBlendSection = section;
+    bg = getBackgroundRgb(section);
+
+    if (isHeroSection(section)) {
+      ring.style.backgroundColor = heroRingColor;
+      ring.style.filter = "none";
+      ring.style.mixBlendMode = "difference";
+      return;
+    }
+
+    ring.style.backgroundColor = rgbToCss(bg);
+    ring.style.filter = "invert(1)";
+    ring.style.mixBlendMode = "normal";
+  }
+
   function clampSpeed(particle, limit) {
     var speed = Math.sqrt(particle.vx * particle.vx + particle.vy * particle.vy);
     if (speed > limit) {
@@ -271,6 +346,7 @@
     cursorClient.x += (mouse.clientX - cursorClient.x) * 0.24;
     cursorClient.y += (mouse.clientY - cursorClient.y) * 0.24;
     setRingPosition(cursorClient.x, cursorClient.y);
+    updateRingBlendColor(mouse.clientX, mouse.clientY);
 
     mouse.inHero = isPointInHero(mouse.clientX, mouse.clientY);
 
@@ -627,6 +703,7 @@
     effectReady = true;
     if (particlesLayer) particlesLayer.classList.add("is-revealed");
     ring.classList.add("is-ready");
+    updateRingBlendColor(mouse.clientX, mouse.clientY);
     loop();
     if (mouse.visible) ring.classList.add("is-visible");
   }
@@ -642,6 +719,7 @@
   document.addEventListener("pointermove", function (event) {
     mouse.clientX = event.clientX;
     mouse.clientY = event.clientY;
+    updateRingBlendColor(event.clientX, event.clientY);
 
     if (!mouse.visible) {
       mouse.visible = true;
