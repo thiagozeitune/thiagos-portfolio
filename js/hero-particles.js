@@ -719,57 +719,14 @@
     }
   }
 
-  var pulsePeriodMs = 5200;
-  var pulseSquareMs = 2000;
-  var pulseStartedAt = null;
-
-  function hasReadySquareConnection() {
-    var i;
-    var p;
-
-    for (i = 0; i < particles.length; i += 1) {
-      p = particles[i];
-      if (p.isSquare && p.connected && p.linkAnim >= 1) return true;
-    }
-
-    return false;
-  }
-
-  function getPulseState() {
-    var elapsed;
-
-    if (pulseStartedAt == null) {
-      return { phase: "rest", progress: 0 };
-    }
-
-    elapsed = (performance.now() - pulseStartedAt) % pulsePeriodMs;
-
-    if (elapsed < pulseSquareMs) {
-      return { phase: "square", progress: elapsed / pulseSquareMs };
-    }
-
-    return { phase: "rest", progress: 0 };
-  }
-
-  function drawConnectionLine(p, anchorX, anchorY, strength, pulseActive, pulseState) {
+  function drawConnectionLine(p, anchorX, anchorY, strength) {
     var endX = anchorX + (p.x - anchorX) * p.linkAnim;
     var endY = anchorY + (p.y - anchorY) * p.linkAnim;
-    var dx = endX - anchorX;
-    var dy = endY - anchorY;
-    var len = Math.sqrt(dx * dx + dy * dy);
     var alpha = 0.12 + 0.18 * strength;
     var isSquare = !!p.isSquare;
     var lineR = isSquare ? 96 : 29;
     var lineG = isSquare ? 51 : 29;
     var lineB = isSquare ? 230 : 29;
-    var localHead;
-    var eased;
-    var t;
-    var px;
-    var py;
-    var pulseAlpha;
-    var radius;
-    var gradient;
 
     ctx.beginPath();
     ctx.strokeStyle = "rgba(" + lineR + ", " + lineG + ", " + lineB + ", " + alpha + ")";
@@ -777,30 +734,6 @@
     ctx.moveTo(anchorX, anchorY);
     ctx.lineTo(endX, endY);
     ctx.stroke();
-
-    if (!pulseActive || !pulseState || !isSquare || len < 8 || p.linkAnim < 1) return;
-    if (pulseState.phase !== "square") return;
-
-    localHead = pulseState.progress;
-    eased = 1 - Math.pow(1 - localHead, 3);
-    t = 1 - eased;
-
-    px = anchorX + dx * t;
-    py = anchorY + dy * t;
-
-    // Disperse (spread) and attenuate (lose energy) with distance traveled.
-    pulseAlpha = (0.16 + 0.14 * strength) * (1 - eased * 0.72);
-    radius = (7 + 4 * strength) * (1 + eased * 1.6);
-
-    gradient = ctx.createRadialGradient(px, py, 0, px, py, radius);
-    gradient.addColorStop(0, "rgba(96, 51, 230, " + pulseAlpha + ")");
-    gradient.addColorStop(0.35, "rgba(96, 51, 230, " + pulseAlpha * 0.45 + ")");
-    gradient.addColorStop(0.7, "rgba(96, 51, 230, " + pulseAlpha * 0.12 + ")");
-    gradient.addColorStop(1, "rgba(96, 51, 230, 0)");
-    ctx.beginPath();
-    ctx.fillStyle = gradient;
-    ctx.arc(px, py, radius, 0, Math.PI * 2);
-    ctx.fill();
   }
 
   function draw() {
@@ -815,16 +748,6 @@
     var ny;
     var anchorX;
     var anchorY;
-    var pulseActive = hasReadySquareConnection();
-    var pulseState;
-
-    if (pulseActive) {
-      if (pulseStartedAt == null) pulseStartedAt = performance.now();
-    } else {
-      pulseStartedAt = null;
-    }
-
-    pulseState = pulseActive ? getPulseState() : null;
 
     ctx.clearRect(0, 0, width, height);
 
@@ -854,7 +777,7 @@
         strength = Math.min((dist - p.restLength) / connectRadius, 1);
         if (strength < 0) strength = 0;
 
-        drawConnectionLine(p, anchorX, anchorY, strength, pulseActive, pulseState);
+        drawConnectionLine(p, anchorX, anchorY, strength);
       }
     }
   }
