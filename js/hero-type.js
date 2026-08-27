@@ -58,6 +58,18 @@
   var activeNode = null;
   var typingSpeed = 28;
   var pauseAfterBreak = 280;
+  var particlesNotified = false;
+  var totalChars = parts.reduce(function (sum, part) {
+    return sum + (part.value ? part.value.length : 0);
+  }, 0);
+  var typedChars = 0;
+
+  function maybeRevealParticles() {
+    if (particlesNotified || totalChars === 0) return;
+    if (typedChars / totalChars < 0.88) return;
+    particlesNotified = true;
+    notifyComplete();
+  }
 
   function appendChar(char) {
     if (!activeNode) {
@@ -79,6 +91,10 @@
   function typeNext() {
     if (partIndex >= parts.length) {
       if (caret) caret.classList.add("is-done");
+      if (!particlesNotified) {
+        particlesNotified = true;
+        notifyComplete();
+      }
       drawUnderlines();
       return;
     }
@@ -119,6 +135,8 @@
         appendChar(nextChar);
       }
       charIndex += 1;
+      typedChars += 1;
+      maybeRevealParticles();
       var delay = nextChar === " " ? typingSpeed * 1.4 : typingSpeed;
       if (nextChar === "." || nextChar === "!") delay = typingSpeed * 6;
       setTimeout(typeNext, delay);
@@ -133,19 +151,10 @@
 
   function drawUnderlines() {
     var underlines = typewriter.querySelectorAll(".underline");
-    var lastIndex = underlines.length - 1;
-
-    if (lastIndex < 0) {
-      notifyComplete();
-      return;
-    }
 
     underlines.forEach(function (el, index) {
       setTimeout(function () {
         el.classList.add("is-drawn");
-        if (index === lastIndex) {
-          setTimeout(notifyComplete, 260);
-        }
       }, 180 + index * 220);
     });
   }

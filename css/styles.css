@@ -269,6 +269,8 @@ img {
   line-height: .5em;
   display: inline-block;
   position: relative;
+  z-index: 0;
+  isolation: isolate;
 }
 
 .underline::after {
@@ -282,6 +284,7 @@ img {
   transform: scaleX(0);
   transform-origin: left center;
   transition: transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  z-index: -1;
 }
 
 .underline.is-drawn::after {

@@ -24,9 +24,9 @@
   var driftOrbit = 190;
   var cursorExclusionRadius = 22;
   var cursorVisualRadius = 8;
-  var particleCount = 38;
-  var shootingStarCount = 5;
-  var elasticStrength = 0.105;
+  var particleCount = 28;
+  var shootingStarCount = 1;
+  var elasticStrength = 0.068;
   var minRestLengthFloor = 88;
   var moveThreshold = 0.35;
   var restoreStrength = 0.004;
@@ -34,6 +34,7 @@
   var maxDriftSpeed = 0.11;
   var pullDamping = 0.992;
   var driftDamping = 0.996;
+  var linkAnimSpeed = 0.05;
   var rafId = 0;
   var time = 0;
   var particlesReady = false;
@@ -165,7 +166,7 @@
     p.homeY = y;
     p.vx = Math.cos(angle) * speed;
     p.vy = Math.sin(angle) * speed;
-    p.r = rand(1.1, 1.65);
+    p.r = rand(1.55, 2.5);
     p.phase = rand(0, Math.PI * 2);
     p.driftRate = 1;
     p.driftAmp = 0;
@@ -202,7 +203,7 @@
   function createParticles() {
     particles = [];
     var count = Math.round(particleCount * Math.min(1, width / 900));
-    count = Math.max(26, count);
+    count = Math.max(20, count);
     var positions = createRandomPositions(count);
 
     for (var i = 0; i < count; i += 1) {
@@ -215,10 +216,11 @@
         homeY: pos.y,
         vx: rand(-0.04, 0.04) * driftRate,
         vy: rand(-0.04, 0.04) * driftRate,
-        r: rand(1.4, 2.4),
+        r: rand(1.6, 2.7),
         phase: rand(0, Math.PI * 2),
         driftRate: driftRate,
         driftAmp: rand(0.0045, 0.01) * (0.85 + driftRate * 0.12),
+        isSquare: Math.random() < 0.32,
         connected: false,
         restLength: 0,
         linkAnim: 0
@@ -343,8 +345,8 @@
     prevHeroX = cursor.x;
     prevHeroY = cursor.y;
 
-    cursorClient.x += (mouse.clientX - cursorClient.x) * 0.24;
-    cursorClient.y += (mouse.clientY - cursorClient.y) * 0.24;
+    cursorClient.x += (mouse.clientX - cursorClient.x) * 0.04;
+    cursorClient.y += (mouse.clientY - cursorClient.y) * 0.04;
     setRingPosition(cursorClient.x, cursorClient.y);
     updateRingBlendColor(mouse.clientX, mouse.clientY);
 
@@ -383,6 +385,40 @@
     p.linkAnim = 0;
   }
 
+  function enforceSingleSquareConnection() {
+    var best = null;
+    var bestDist = Infinity;
+    var i;
+    var p;
+    var dx;
+    var dy;
+    var dist;
+
+    for (i = 0; i < particles.length; i += 1) {
+      p = particles[i];
+      if (!p.isSquare || !p.connected) continue;
+
+      dx = cursor.x - p.x;
+      dy = cursor.y - p.y;
+      dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = p;
+      }
+    }
+
+    if (!best) return;
+
+    for (i = 0; i < particles.length; i += 1) {
+      p = particles[i];
+      if (p.isSquare && p.connected && p !== best) {
+        p.connected = false;
+        p.linkAnim = 0;
+      }
+    }
+  }
+
   function dampInwardVelocity(p, dx, dy, dist) {
     var nx;
     var ny;
@@ -417,7 +453,7 @@
       return;
     }
 
-    tension = Math.min(stretch * elasticStrength, 0.16);
+    tension = Math.min(stretch * elasticStrength, 0.018);
 
     if (cursorMove.moving && cursorMove.speed > moveThreshold) {
       awayBoost = (cursorMove.x * nx + cursorMove.y * ny) / cursorMove.speed;
@@ -517,7 +553,7 @@
         }
 
         if (p.connected) {
-          p.linkAnim = Math.min(1, p.linkAnim + 0.009375);
+          p.linkAnim = Math.min(1, p.linkAnim + linkAnimSpeed);
           applyElasticForce(p, dx, dy, dist);
         } else {
           p.linkAnim = 0;
@@ -529,6 +565,8 @@
         applyTextZoneRepulsion(p);
       }
     }
+
+    if (mouse.inHero) enforceSingleSquareConnection();
   }
 
   function updateParticles() {
@@ -608,17 +646,45 @@
     }
   }
 
-  function drawShootingStar(p) {
+  function drawSquareParticle(p) {
+    var size = p.r * 1.4;
+    var half = size / 2;
+    var blink;
     var glow;
     var gradient;
+    var pulse;
 
-    if (!p.active) return;
+    if (p.linkAnim > 0) {
+      blink = 0.5 + 0.5 * Math.sin(time * 3.2 + p.phase);
+      pulse = p.linkAnim * (0.28 + 0.52 * blink);
+      glow = size * (1.8 + 0.35 * blink);
+      gradient = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, glow);
+      gradient.addColorStop(0, "rgba(96, 51, 230, " + pulse + ")");
+      gradient.addColorStop(0.45, "rgba(96, 51, 230, " + pulse * 0.35 + ")");
+      gradient.addColorStop(1, "rgba(96, 51, 230, 0)");
+      ctx.beginPath();
+      ctx.fillStyle = gradient;
+      ctx.arc(p.x, p.y, glow, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
-    glow = p.r * 1.02;
-    gradient = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, glow);
-    gradient.addColorStop(0, "rgba(29, 29, 29, 0.68)");
-    gradient.addColorStop(0.55, "rgba(29, 29, 29, 0.24)");
-    gradient.addColorStop(0.88, "rgba(29, 29, 29, 0.06)");
+    ctx.fillStyle = "rgba(96, 51, 230, 0.32)";
+    ctx.fillRect(p.x - half, p.y - half, size, size);
+
+    if (p.linkAnim > 0) {
+      ctx.globalAlpha = p.linkAnim;
+      ctx.fillStyle = "rgb(96, 51, 230)";
+      ctx.fillRect(p.x - half, p.y - half, size, size);
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  function drawGreyGlow(p, core, mid, edge, scale) {
+    var glow = p.r * scale;
+    var gradient = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, glow);
+    gradient.addColorStop(0, "rgba(29, 29, 29, " + core + ")");
+    gradient.addColorStop(0.55, "rgba(29, 29, 29, " + mid + ")");
+    gradient.addColorStop(0.88, "rgba(29, 29, 29, " + edge + ")");
     gradient.addColorStop(1, "rgba(29, 29, 29, 0)");
     ctx.beginPath();
     ctx.fillStyle = gradient;
@@ -627,29 +693,114 @@
   }
 
   function drawSoftParticle(p) {
-    var glow = p.r * 0.92;
-    var gradient = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, glow);
-    gradient.addColorStop(0, "rgba(29, 29, 29, 0.52)");
-    gradient.addColorStop(0.55, "rgba(29, 29, 29, 0.18)");
-    gradient.addColorStop(0.88, "rgba(29, 29, 29, 0.04)");
-    gradient.addColorStop(1, "rgba(29, 29, 29, 0)");
-    ctx.beginPath();
-    ctx.fillStyle = gradient;
-    ctx.arc(p.x, p.y, glow, 0, Math.PI * 2);
-    ctx.fill();
+    if (p.isSquare) {
+      drawSquareParticle(p);
+      return;
+    }
+
+    drawGreyGlow(p, 0.52, 0.18, 0.04, 0.92);
+
+    if (p.linkAnim > 0) {
+      ctx.globalAlpha = p.linkAnim;
+      drawGreyGlow(p, 1, 0.55, 0.18, 0.92);
+      ctx.globalAlpha = 1;
+    }
   }
 
-  function drawConnectionLine(p, anchorX, anchorY, strength) {
+  function drawShootingStar(p) {
+    if (!p.active) return;
+
+    drawGreyGlow(p, 0.68, 0.24, 0.06, 1.02);
+
+    if (p.linkAnim > 0) {
+      ctx.globalAlpha = p.linkAnim;
+      drawGreyGlow(p, 1, 0.55, 0.18, 1.02);
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  var pulsePeriodMs = 5200;
+  var pulseSquareMs = 2000;
+  var pulseStartedAt = null;
+
+  function hasReadySquareConnection() {
+    var i;
+    var p;
+
+    for (i = 0; i < particles.length; i += 1) {
+      p = particles[i];
+      if (p.isSquare && p.connected && p.linkAnim >= 1) return true;
+    }
+
+    return false;
+  }
+
+  function getPulseState() {
+    var elapsed;
+
+    if (pulseStartedAt == null) {
+      return { phase: "rest", progress: 0 };
+    }
+
+    elapsed = (performance.now() - pulseStartedAt) % pulsePeriodMs;
+
+    if (elapsed < pulseSquareMs) {
+      return { phase: "square", progress: elapsed / pulseSquareMs };
+    }
+
+    return { phase: "rest", progress: 0 };
+  }
+
+  function drawConnectionLine(p, anchorX, anchorY, strength, pulseActive, pulseState) {
     var endX = anchorX + (p.x - anchorX) * p.linkAnim;
     var endY = anchorY + (p.y - anchorY) * p.linkAnim;
+    var dx = endX - anchorX;
+    var dy = endY - anchorY;
+    var len = Math.sqrt(dx * dx + dy * dy);
     var alpha = 0.12 + 0.18 * strength;
+    var isSquare = !!p.isSquare;
+    var lineR = isSquare ? 96 : 29;
+    var lineG = isSquare ? 51 : 29;
+    var lineB = isSquare ? 230 : 29;
+    var localHead;
+    var eased;
+    var t;
+    var px;
+    var py;
+    var pulseAlpha;
+    var radius;
+    var gradient;
 
     ctx.beginPath();
-    ctx.strokeStyle = "rgba(29, 29, 29, " + alpha + ")";
+    ctx.strokeStyle = "rgba(" + lineR + ", " + lineG + ", " + lineB + ", " + alpha + ")";
     ctx.lineWidth = 1;
     ctx.moveTo(anchorX, anchorY);
     ctx.lineTo(endX, endY);
     ctx.stroke();
+
+    if (!pulseActive || !pulseState || !isSquare || len < 8 || p.linkAnim < 1) return;
+    if (pulseState.phase !== "square") return;
+
+    localHead = pulseState.progress;
+    eased = 1 - Math.pow(1 - localHead, 3);
+    t = 1 - eased;
+
+    px = anchorX + dx * t;
+    py = anchorY + dy * t;
+
+    // Disperse (spread) and attenuate (lose energy) with distance traveled.
+    pulseAlpha = (0.16 + 0.14 * strength) * (1 - eased * 0.72);
+    radius = (7 + 4 * strength) * (1 + eased * 1.6);
+
+    gradient = ctx.createRadialGradient(px, py, 0, px, py, radius);
+    gradient.addColorStop(0, "rgba(96, 51, 230, " + pulseAlpha + ")");
+    gradient.addColorStop(0.35, "rgba(96, 51, 230, " + pulseAlpha * 0.45 + ")");
+    gradient.addColorStop(0.7, "rgba(96, 51, 230, " + pulseAlpha * 0.12 + ")");
+    gradient.addColorStop(1, "rgba(96, 51, 230, 0)");
+    ctx.beginPath();
+    ctx.fillStyle = gradient;
+    ctx.arc(px, py, radius, 0, Math.PI * 2);
+    ctx.fill();
   }
 
   function draw() {
@@ -664,6 +815,16 @@
     var ny;
     var anchorX;
     var anchorY;
+    var pulseActive = hasReadySquareConnection();
+    var pulseState;
+
+    if (pulseActive) {
+      if (pulseStartedAt == null) pulseStartedAt = performance.now();
+    } else {
+      pulseStartedAt = null;
+    }
+
+    pulseState = pulseActive ? getPulseState() : null;
 
     ctx.clearRect(0, 0, width, height);
 
@@ -693,7 +854,7 @@
         strength = Math.min((dist - p.restLength) / connectRadius, 1);
         if (strength < 0) strength = 0;
 
-        drawConnectionLine(p, anchorX, anchorY, strength);
+        drawConnectionLine(p, anchorX, anchorY, strength, pulseActive, pulseState);
       }
     }
   }
