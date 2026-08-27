@@ -116,6 +116,20 @@
   }
 
   function getTextZone() {
+    var heading = hero.querySelector(".heading-1");
+    var pad = 40;
+    var rect;
+
+    if (heading) {
+      rect = heading.getBoundingClientRect();
+      return {
+        left: rect.left - heroRect.left - pad,
+        top: rect.top - heroRect.top - pad,
+        width: rect.width + pad * 2,
+        height: rect.height + pad * 2
+      };
+    }
+
     var zoneWidth = Math.min(width * 0.68, 820);
     var zoneHeight = Math.min(height * 0.42, 280);
     return {
@@ -133,6 +147,33 @@
       y >= textZone.top &&
       y <= textZone.top + textZone.height
     );
+  }
+
+  function isCursorInTextZone() {
+    return mouse.inHero && isInTextZone(cursor.x, cursor.y);
+  }
+
+  function keepOutOfTextZone(p) {
+    var pad = p.r * 2.2;
+    var left = textZone.left - pad;
+    var right = textZone.left + textZone.width + pad;
+    var top = textZone.top - pad;
+    var bottom = textZone.top + textZone.height + pad;
+    var cx;
+    var cy;
+
+    if (p.x <= left || p.x >= right || p.y <= top || p.y >= bottom) return;
+
+    cx = textZone.left + textZone.width / 2;
+    cy = textZone.top + textZone.height / 2;
+
+    if (Math.abs(p.x - cx) / (textZone.width / 2 + pad) > Math.abs(p.y - cy) / (textZone.height / 2 + pad)) {
+      p.x = p.x < cx ? left : right;
+      p.vx = p.x < cx ? -Math.abs(p.vx) * 0.35 : Math.abs(p.vx) * 0.35;
+    } else {
+      p.y = p.y < cy ? top : bottom;
+      p.vy = p.y < cy ? -Math.abs(p.vy) * 0.35 : Math.abs(p.vy) * 0.35;
+    }
   }
 
   function createRandomPositions(count) {
@@ -291,6 +332,7 @@
     canvas.style.width = width + "px";
     canvas.style.height = height + "px";
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    syncLayoutCache();
     resetGlowSprites();
     createParticles();
   }
@@ -531,8 +573,8 @@
     dx = p.x - cx;
     dy = p.y - cy;
     dist = Math.sqrt(dx * dx + dy * dy) || 1;
-    p.vx += (dx / dist) * 0.028;
-    p.vy += (dy / dist) * 0.028;
+    p.vx += (dx / dist) * 0.055;
+    p.vy += (dy / dist) * 0.055;
   }
 
   function applyNaturalDrift(p) {
@@ -586,8 +628,9 @@
 
       if (p.isStar && !p.active) continue;
 
-      if (!mouse.inHero) {
+      if (!mouse.inHero || isCursorInTextZone()) {
         p.connected = false;
+        p.linkAnim = 0;
       } else {
         dx = cursor.x - p.x;
         dy = cursor.y - p.y;
@@ -662,6 +705,8 @@
 
       p.x += p.vx;
       p.y += p.vy;
+
+      if (!p.isStar) keepOutOfTextZone(p);
 
       if (mouse.inHero) {
         dx = cursor.x - p.x;
@@ -796,6 +841,7 @@
 
     for (i = 0; i < particles.length; i += 1) {
       p = particles[i];
+      if (isInTextZone(p.x, p.y) && !p.isStar) continue;
       if (p.isStar) {
         drawShootingStar(p);
       } else {
@@ -803,7 +849,7 @@
       }
     }
 
-    if (mouse.inHero) {
+    if (mouse.inHero && !isCursorInTextZone()) {
       for (k = 0; k < particles.length; k += 1) {
         p = particles[k];
         if (!p.connected || (p.isStar && !p.active)) continue;
