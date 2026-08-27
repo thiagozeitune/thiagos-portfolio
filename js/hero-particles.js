@@ -24,7 +24,7 @@
   var driftOrbit = 190;
   var cursorExclusionRadius = 22;
   var cursorVisualRadius = 8;
-  var particleCount = 28;
+  var particleCount = 18;
   var shootingStarCount = 1;
   var elasticStrength = 0.068;
   var minRestLengthFloor = 88;
@@ -35,6 +35,7 @@
   var pullDamping = 0.992;
   var driftDamping = 0.996;
   var linkAnimSpeed = 0.05;
+  var sectionBoundsPad = 10;
   var rafId = 0;
   var time = 0;
   var particlesReady = false;
@@ -64,10 +65,17 @@
     var gradient;
     canvas.width = size;
     canvas.height = size;
-    gradient = spriteCtx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, radius);
+    gradient = spriteCtx.createRadialGradient(
+      size / 2,
+      size / 2,
+      radius * 0.09,
+      size / 2,
+      size / 2,
+      radius
+    );
     gradient.addColorStop(0, "rgba(" + r + ", " + g + ", " + b + ", " + core + ")");
-    gradient.addColorStop(0.55, "rgba(" + r + ", " + g + ", " + b + ", " + mid + ")");
-    gradient.addColorStop(0.88, "rgba(" + r + ", " + g + ", " + b + ", " + edge + ")");
+    gradient.addColorStop(0.445, "rgba(" + r + ", " + g + ", " + b + ", " + mid + ")");
+    gradient.addColorStop(0.81, "rgba(" + r + ", " + g + ", " + b + ", " + edge + ")");
     gradient.addColorStop(1, "rgba(" + r + ", " + g + ", " + b + ", 0)");
     spriteCtx.fillStyle = gradient;
     spriteCtx.fillRect(0, 0, size, size);
@@ -140,6 +148,31 @@
     };
   }
 
+  function isInsideSection(x, y, pad) {
+    var inset = pad == null ? sectionBoundsPad : pad;
+    return x >= inset && x <= width - inset && y >= inset && y <= height - inset;
+  }
+
+  function clampInsideSection(p, pad) {
+    var inset = pad == null ? sectionBoundsPad : pad;
+
+    if (p.x < inset) {
+      p.x = inset;
+      p.vx *= -0.55;
+    } else if (p.x > width - inset) {
+      p.x = width - inset;
+      p.vx *= -0.55;
+    }
+
+    if (p.y < inset) {
+      p.y = inset;
+      p.vy *= -0.55;
+    } else if (p.y > height - inset) {
+      p.y = height - inset;
+      p.vy *= -0.55;
+    }
+  }
+
   function isInTextZone(x, y) {
     return (
       x >= textZone.left &&
@@ -147,6 +180,44 @@
       y >= textZone.top &&
       y <= textZone.top + textZone.height
     );
+  }
+
+  function isInCenterZone(x, y) {
+    var cx = width * 0.5;
+    var cy = height * 0.5;
+    var rw = Math.min(width * 0.46, 620);
+    var rh = Math.min(height * 0.42, 320);
+    var dx = (x - cx) / rw;
+    var dy = (y - cy) / rh;
+    return dx * dx + dy * dy <= 1;
+  }
+
+  function isBlockedSpawnZone(x, y) {
+    return isInTextZone(x, y) || isInCenterZone(x, y);
+  }
+
+  function randomSpawnPoint() {
+    var pad = sectionBoundsPad + 10;
+    var roll = Math.random();
+
+    if (roll < 0.36) {
+      return {
+        x: rand(width * 0.56, width - pad),
+        y: rand(pad, height * 0.44)
+      };
+    }
+
+    if (roll < 0.72) {
+      return {
+        x: rand(pad, width * 0.44),
+        y: rand(height * 0.56, height - pad)
+      };
+    }
+
+    return {
+      x: rand(pad, width - pad),
+      y: rand(pad, height - pad)
+    };
   }
 
   function isCursorInTextZone() {
@@ -178,10 +249,11 @@
 
   function createRandomPositions(count) {
     var positions = [];
-    var minDist = Math.min(width, height) / (Math.sqrt(count) * 2.4);
+    var minDist = Math.min(width, height) / (Math.sqrt(count) * 4.5);
     var minDistSq = minDist * minDist;
     var i;
     var j;
+    var point;
     var x;
     var y;
     var attempts;
@@ -191,27 +263,47 @@
 
     for (i = 0; i < count; i += 1) {
       attempts = 0;
+      ok = false;
 
-      do {
+      while (attempts < 55) {
+        point = randomSpawnPoint();
+        x = point.x;
+        y = point.y;
+        attempts += 1;
+
+        if (isBlockedSpawnZone(x, y)) continue;
+
         ok = true;
-        x = rand(0, width);
-        y = rand(0, height);
-
-        if (isInTextZone(x, y)) {
-          ok = false;
-        } else {
-          for (j = 0; j < positions.length; j += 1) {
-            dx = x - positions[j].x;
-            dy = y - positions[j].y;
-            if (dx * dx + dy * dy < minDistSq) {
-              ok = false;
-              break;
-            }
+        for (j = 0; j < positions.length; j += 1) {
+          dx = x - positions[j].x;
+          dy = y - positions[j].y;
+          if (dx * dx + dy * dy < minDistSq) {
+            ok = false;
+            break;
           }
         }
 
-        attempts += 1;
-      } while (!ok && attempts < 70);
+        if (ok) break;
+      }
+
+      if (!ok) {
+        attempts = 0;
+        while (attempts < 80) {
+          point = randomSpawnPoint();
+          x = point.x;
+          y = point.y;
+          attempts += 1;
+          if (!isBlockedSpawnZone(x, y)) {
+            ok = true;
+            break;
+          }
+        }
+      }
+
+      if (!ok) {
+        x = rand(20, width - 20);
+        y = rand(20, height * 0.16);
+      }
 
       positions.push({ x: x, y: y });
     }
@@ -227,35 +319,20 @@
   }
 
   function shootingStarExited(p) {
-    return (
-      p.x < -80 ||
-      p.x > width + 80 ||
-      p.y < -80 ||
-      p.y > height + 80
-    );
+    return !isInsideSection(p.x, p.y, sectionBoundsPad);
   }
 
   function launchShootingStar(p, initialDelay) {
     var speed = rand(1.35, 2.05);
     var angle;
-    var x;
-    var y;
-
-    if (Math.random() > 0.5) {
-      x = -24;
-      y = rand(height * 0.06, height * 0.72);
-      angle = rand(0.08, 0.62);
-    } else {
-      x = rand(width * 0.04, width * 0.82);
-      y = -24;
-      angle = rand(0.72, 1.28);
-    }
+    var pad = sectionBoundsPad + 12;
 
     p.isStar = true;
-    p.x = x;
-    p.y = y;
-    p.homeX = x;
-    p.homeY = y;
+    p.x = rand(pad, width - pad);
+    p.y = rand(pad, height - pad);
+    angle = rand(0, Math.PI * 2);
+    p.homeX = p.x;
+    p.homeY = p.y;
     p.vx = Math.cos(angle) * speed;
     p.vy = Math.sin(angle) * speed;
     p.r = rand(1.55, 2.5);
@@ -295,7 +372,7 @@
   function createParticles() {
     particles = [];
     var count = Math.round(particleCount * Math.min(1, width / 900));
-    count = Math.max(20, count);
+    count = Math.max(14, count);
     var positions = createRandomPositions(count);
 
     for (var i = 0; i < count; i += 1) {
@@ -478,6 +555,40 @@
     p.linkAnim = 0;
   }
 
+  function enforceSingleConnection() {
+    var best = null;
+    var bestDist = Infinity;
+    var i;
+    var p;
+    var dx;
+    var dy;
+    var dist;
+
+    for (i = 0; i < particles.length; i += 1) {
+      p = particles[i];
+      if (p.isStar || !p.connected) continue;
+
+      dx = cursor.x - p.x;
+      dy = cursor.y - p.y;
+      dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = p;
+      }
+    }
+
+    if (!best) return;
+
+    for (i = 0; i < particles.length; i += 1) {
+      p = particles[i];
+      if (!p.isStar && p.connected && p !== best) {
+        p.connected = false;
+        p.linkAnim = 0;
+      }
+    }
+  }
+
   function enforceSingleSquareConnection() {
     var best = null;
     var bestDist = Infinity;
@@ -628,7 +739,13 @@
 
       if (p.isStar && !p.active) continue;
 
-      if (!mouse.inHero || isCursorInTextZone()) {
+      if (p.isStar) {
+        p.connected = false;
+        p.linkAnim = 0;
+        continue;
+      }
+
+      if (!mouse.inHero) {
         p.connected = false;
         p.linkAnim = 0;
       } else {
@@ -658,7 +775,10 @@
       }
     }
 
-    if (mouse.inHero) enforceSingleSquareConnection();
+    if (mouse.inHero) {
+      if (isCursorInTextZone()) enforceSingleConnection();
+      else enforceSingleSquareConnection();
+    }
   }
 
   function updateParticles() {
@@ -682,13 +802,6 @@
       if (p.isStar && p.active && !p.connected) {
         p.x += p.vx;
         p.y += p.vy;
-
-        if (mouse.inHero) {
-          dx = cursor.x - p.x;
-          dy = cursor.y - p.y;
-          dist = Math.sqrt(dx * dx + dy * dy);
-          keepOutsideCursor(p, dx, dy, dist);
-        }
 
         if (shootingStarExited(p)) deactivateShootingStar(p);
         continue;
@@ -722,27 +835,12 @@
 
       if (p.isStar) continue;
 
-      if (p.x < 0) {
-        p.x = 0;
-        p.vx *= -0.55;
-      } else if (p.x > width) {
-        p.x = width;
-        p.vx *= -0.55;
-      }
-
-      if (p.y < 0) {
-        p.y = 0;
-        p.vy *= -0.55;
-      } else if (p.y > height) {
-        p.y = height;
-        p.vy *= -0.55;
-      }
+      clampInsideSection(p);
     }
   }
 
   function drawSquareParticle(p) {
-    var size = p.r * 1.4;
-    var half = size / 2;
+    var radius = p.r * 0.7;
     var blink;
     var glow;
     var gradient;
@@ -750,11 +848,12 @@
 
     if (p.linkAnim > 0) {
       blink = 0.5 + 0.5 * Math.sin(time * 3.2 + p.phase);
-      pulse = p.linkAnim * (0.28 + 0.52 * blink);
-      glow = size * (1.8 + 0.35 * blink);
-      gradient = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, glow);
+      pulse = p.linkAnim * (0.3 + 0.54 * blink);
+      glow = radius * (3.9 + 0.775 * blink);
+      gradient = ctx.createRadialGradient(p.x, p.y, glow * 0.08, p.x, p.y, glow);
       gradient.addColorStop(0, "rgba(96, 51, 230, " + pulse + ")");
-      gradient.addColorStop(0.45, "rgba(96, 51, 230, " + pulse * 0.35 + ")");
+      gradient.addColorStop(0.4, "rgba(96, 51, 230, " + pulse * 0.385 + ")");
+      gradient.addColorStop(0.87, "rgba(96, 51, 230, " + pulse * 0.06 + ")");
       gradient.addColorStop(1, "rgba(96, 51, 230, 0)");
       ctx.beginPath();
       ctx.fillStyle = gradient;
@@ -762,13 +861,25 @@
       ctx.fill();
     }
 
-    ctx.fillStyle = "rgba(96, 51, 230, 0.32)";
-    ctx.fillRect(p.x - half, p.y - half, size, size);
+    gradient = ctx.createRadialGradient(p.x, p.y, radius * 0.1, p.x, p.y, radius * 1.28);
+    gradient.addColorStop(0, "rgba(96, 51, 230, 0.38)");
+    gradient.addColorStop(0.42, "rgba(96, 51, 230, 0.15)");
+    gradient.addColorStop(1, "rgba(96, 51, 230, 0)");
+    ctx.beginPath();
+    ctx.fillStyle = gradient;
+    ctx.arc(p.x, p.y, radius * 1.28, 0, Math.PI * 2);
+    ctx.fill();
 
     if (p.linkAnim > 0) {
       ctx.globalAlpha = p.linkAnim;
-      ctx.fillStyle = "rgb(96, 51, 230)";
-      ctx.fillRect(p.x - half, p.y - half, size, size);
+      gradient = ctx.createRadialGradient(p.x, p.y, radius * 0.075, p.x, p.y, radius * 1.18);
+      gradient.addColorStop(0, "rgba(96, 51, 230, 0.78)");
+      gradient.addColorStop(0.5, "rgba(96, 51, 230, 0.42)");
+      gradient.addColorStop(1, "rgba(96, 51, 230, 0)");
+      ctx.beginPath();
+      ctx.fillStyle = gradient;
+      ctx.arc(p.x, p.y, radius * 1.18, 0, Math.PI * 2);
+      ctx.fill();
       ctx.globalAlpha = 1;
     }
   }
@@ -786,11 +897,11 @@
       return;
     }
 
-    drawGreyGlow(p, 0.52, 0.18, 0.04, 0.92);
+    drawGreyGlow(p, 0.57, 0.22, 0.065, 1.03);
 
     if (p.linkAnim > 0) {
       ctx.globalAlpha = p.linkAnim;
-      drawGreyGlow(p, 1, 0.55, 0.18, 0.92);
+      drawGreyGlow(p, 0.98, 0.585, 0.2, 1.03);
       ctx.globalAlpha = 1;
     }
   }
@@ -798,11 +909,11 @@
   function drawShootingStar(p) {
     if (!p.active) return;
 
-    drawGreyGlow(p, 0.68, 0.24, 0.06, 1.02);
+    drawGreyGlow(p, 0.73, 0.27, 0.08, 1.11);
 
     if (p.linkAnim > 0) {
       ctx.globalAlpha = p.linkAnim;
-      drawGreyGlow(p, 1, 0.55, 0.18, 1.02);
+      drawGreyGlow(p, 0.98, 0.585, 0.2, 1.11);
       ctx.globalAlpha = 1;
     }
   }
@@ -838,9 +949,14 @@
     var anchorY;
 
     ctx.clearRect(0, 0, width, height);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, width, height);
+    ctx.clip();
 
     for (i = 0; i < particles.length; i += 1) {
       p = particles[i];
+      if (!isInsideSection(p.x, p.y, 0)) continue;
       if (isInTextZone(p.x, p.y) && !p.isStar) continue;
       if (p.isStar) {
         drawShootingStar(p);
@@ -849,10 +965,10 @@
       }
     }
 
-    if (mouse.inHero && !isCursorInTextZone()) {
+    if (mouse.inHero) {
       for (k = 0; k < particles.length; k += 1) {
         p = particles[k];
-        if (!p.connected || (p.isStar && !p.active)) continue;
+        if (p.isStar || !p.connected) continue;
 
         dx = cursor.x - p.x;
         dy = cursor.y - p.y;
@@ -869,6 +985,8 @@
         drawConnectionLine(p, anchorX, anchorY, strength);
       }
     }
+
+    ctx.restore();
   }
 
   function revealParticles() {
