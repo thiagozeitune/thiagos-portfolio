@@ -40,26 +40,78 @@
   var particlesReady = false;
   var heroRingColor = "#9fcc19";
   var activeBlendSection = null;
+  var heroRect = { left: 0, top: 0, right: 0, bottom: 0 };
+  var textZone = { left: 0, top: 0, width: 0, height: 0 };
+  var glowSprites = { greySoft: {}, greyBright: {}, purpleSoft: null, purpleBright: null };
+
+  function syncLayoutCache() {
+    var rect = hero.getBoundingClientRect();
+    heroRect.left = rect.left;
+    heroRect.top = rect.top;
+    heroRect.right = rect.right;
+    heroRect.bottom = rect.bottom;
+    textZone = getTextZone();
+  }
+
+  function glowSpriteKey(radius) {
+    return Math.max(4, Math.round(radius * 2));
+  }
+
+  function createGlowSprite(r, g, b, core, mid, edge, radius) {
+    var size = Math.ceil(radius * 2);
+    var canvas = document.createElement("canvas");
+    var spriteCtx = canvas.getContext("2d");
+    var gradient;
+    canvas.width = size;
+    canvas.height = size;
+    gradient = spriteCtx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, radius);
+    gradient.addColorStop(0, "rgba(" + r + ", " + g + ", " + b + ", " + core + ")");
+    gradient.addColorStop(0.55, "rgba(" + r + ", " + g + ", " + b + ", " + mid + ")");
+    gradient.addColorStop(0.88, "rgba(" + r + ", " + g + ", " + b + ", " + edge + ")");
+    gradient.addColorStop(1, "rgba(" + r + ", " + g + ", " + b + ", 0)");
+    spriteCtx.fillStyle = gradient;
+    spriteCtx.fillRect(0, 0, size, size);
+    return { canvas: canvas, radius: radius, size: size };
+  }
+
+  function getGlowSprite(cache, r, g, b, core, mid, edge, radius) {
+    var key = glowSpriteKey(radius);
+    if (!cache[key]) {
+      cache[key] = createGlowSprite(r, g, b, core, mid, edge, radius);
+    }
+    return cache[key];
+  }
+
+  function drawGlowSprite(sprite, x, y, alpha) {
+    if (alpha != null && alpha < 1) ctx.globalAlpha = alpha;
+    ctx.drawImage(sprite.canvas, x - sprite.size / 2, y - sprite.size / 2);
+    if (alpha != null && alpha < 1) ctx.globalAlpha = 1;
+  }
+
+  function resetGlowSprites() {
+    glowSprites.greySoft = {};
+    glowSprites.greyBright = {};
+    glowSprites.purpleSoft = null;
+    glowSprites.purpleBright = null;
+  }
 
   function rand(min, max) {
     return min + Math.random() * (max - min);
   }
 
   function heroCoords(clientX, clientY) {
-    var rect = hero.getBoundingClientRect();
     return {
-      x: clientX - rect.left,
-      y: clientY - rect.top
+      x: clientX - heroRect.left,
+      y: clientY - heroRect.top
     };
   }
 
   function isPointInHero(clientX, clientY) {
-    var rect = hero.getBoundingClientRect();
     return (
-      clientX >= rect.left &&
-      clientX <= rect.right &&
-      clientY >= rect.top &&
-      clientY <= rect.bottom
+      clientX >= heroRect.left &&
+      clientX <= heroRect.right &&
+      clientY >= heroRect.top &&
+      clientY <= heroRect.bottom
     );
   }
 
@@ -75,12 +127,11 @@
   }
 
   function isInTextZone(x, y) {
-    var zone = getTextZone();
     return (
-      x >= zone.left &&
-      x <= zone.left + zone.width &&
-      y >= zone.top &&
-      y <= zone.top + zone.height
+      x >= textZone.left &&
+      x <= textZone.left + textZone.width &&
+      y >= textZone.top &&
+      y <= textZone.top + textZone.height
     );
   }
 
@@ -240,6 +291,7 @@
     canvas.style.width = width + "px";
     canvas.style.height = height + "px";
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    resetGlowSprites();
     createParticles();
   }
 
@@ -348,7 +400,6 @@
     cursorClient.x += (mouse.clientX - cursorClient.x) * 0.04;
     cursorClient.y += (mouse.clientY - cursorClient.y) * 0.04;
     setRingPosition(cursorClient.x, cursorClient.y);
-    updateRingBlendColor(mouse.clientX, mouse.clientY);
 
     mouse.inHero = isPointInHero(mouse.clientX, mouse.clientY);
 
@@ -467,7 +518,6 @@
   }
 
   function applyTextZoneRepulsion(p) {
-    var zone;
     var cx;
     var cy;
     var dx;
@@ -476,9 +526,8 @@
 
     if (p.connected || !isInTextZone(p.x, p.y)) return;
 
-    zone = getTextZone();
-    cx = zone.left + zone.width / 2;
-    cy = zone.top + zone.height / 2;
+    cx = textZone.left + textZone.width / 2;
+    cy = textZone.top + textZone.height / 2;
     dx = p.x - cx;
     dy = p.y - cy;
     dist = Math.sqrt(dx * dx + dy * dy) || 1;
@@ -681,15 +730,9 @@
 
   function drawGreyGlow(p, core, mid, edge, scale) {
     var glow = p.r * scale;
-    var gradient = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, glow);
-    gradient.addColorStop(0, "rgba(29, 29, 29, " + core + ")");
-    gradient.addColorStop(0.55, "rgba(29, 29, 29, " + mid + ")");
-    gradient.addColorStop(0.88, "rgba(29, 29, 29, " + edge + ")");
-    gradient.addColorStop(1, "rgba(29, 29, 29, 0)");
-    ctx.beginPath();
-    ctx.fillStyle = gradient;
-    ctx.arc(p.x, p.y, glow, 0, Math.PI * 2);
-    ctx.fill();
+    var cache = core >= 0.9 ? glowSprites.greyBright : glowSprites.greySoft;
+    var sprite = getGlowSprite(cache, 29, 29, 29, core, mid, edge, glow);
+    drawGlowSprite(sprite, p.x, p.y);
   }
 
   function drawSoftParticle(p) {
@@ -790,6 +833,7 @@
 
   function loop() {
     time += 0.008;
+    syncLayoutCache();
     updateCursorMotion();
 
     if (particlesReady) {
