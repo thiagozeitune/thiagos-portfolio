@@ -39,11 +39,9 @@
   var rafId = 0;
   var time = 0;
   var particlesReady = false;
-  var heroRingColor = "#9fcc19";
-  var activeBlendSection = null;
   var heroRect = { left: 0, top: 0, right: 0, bottom: 0 };
   var textZone = { left: 0, top: 0, width: 0, height: 0 };
-  var glowSprites = { greySoft: {}, greyBright: {}, purpleSoft: null, purpleBright: null };
+  var glowSprites = { greySoft: {}, greyBright: {} };
 
   function syncLayoutCache() {
     var rect = hero.getBoundingClientRect();
@@ -99,8 +97,6 @@
   function resetGlowSprites() {
     glowSprites.greySoft = {};
     glowSprites.greyBright = {};
-    glowSprites.purpleSoft = null;
-    glowSprites.purpleBright = null;
   }
 
   function rand(min, max) {
@@ -389,7 +385,6 @@
         phase: rand(0, Math.PI * 2),
         driftRate: driftRate,
         driftAmp: rand(0.0045, 0.01) * (0.85 + driftRate * 0.12),
-        isSquare: Math.random() < 0.32,
         connected: false,
         restLength: 0,
         linkAnim: 0
@@ -417,79 +412,6 @@
   function setRingPosition(x, y) {
     ring.style.left = x + "px";
     ring.style.top = y + "px";
-  }
-
-  function parseRgb(color) {
-    var match = color.match(/rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/i);
-    if (!match) return null;
-    return {
-      r: Number(match[1]),
-      g: Number(match[2]),
-      b: Number(match[3])
-    };
-  }
-
-  function getBackgroundRgb(el) {
-    var node = el;
-    var bg;
-    var rgb;
-
-    while (node && node !== document.documentElement) {
-      bg = window.getComputedStyle(node).backgroundColor;
-      rgb = parseRgb(bg);
-      if (rgb && bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent") return rgb;
-      node = node.parentElement;
-    }
-
-    return { r: 255, g: 255, b: 255 };
-  }
-
-  function isHeroSection(section) {
-    return section && section.id === "HomeHero";
-  }
-
-  function rgbToCss(rgb) {
-    return "rgb(" + Math.round(rgb.r) + ", " + Math.round(rgb.g) + ", " + Math.round(rgb.b) + ")";
-  }
-
-  function getSectionAt(clientX, clientY) {
-    var elements = document.elementsFromPoint(clientX, clientY);
-    var i;
-    var el;
-
-    for (i = 0; i < elements.length; i += 1) {
-      el = elements[i];
-      if (
-        el.classList &&
-        (el.classList.contains("hero-section") || el.classList.contains("home-section"))
-      ) {
-        return el;
-      }
-    }
-
-    return null;
-  }
-
-  function updateRingBlendColor(clientX, clientY) {
-    var section = getSectionAt(clientX, clientY);
-    var bg;
-
-    if (!section) section = hero;
-    if (section === activeBlendSection) return;
-
-    activeBlendSection = section;
-    bg = getBackgroundRgb(section);
-
-    if (isHeroSection(section)) {
-      ring.style.backgroundColor = heroRingColor;
-      ring.style.filter = "none";
-      ring.style.mixBlendMode = "difference";
-      return;
-    }
-
-    ring.style.backgroundColor = rgbToCss(bg);
-    ring.style.filter = "invert(1)";
-    ring.style.mixBlendMode = "normal";
   }
 
   function clampSpeed(particle, limit) {
@@ -583,40 +505,6 @@
     for (i = 0; i < particles.length; i += 1) {
       p = particles[i];
       if (!p.isStar && p.connected && p !== best) {
-        p.connected = false;
-        p.linkAnim = 0;
-      }
-    }
-  }
-
-  function enforceSingleSquareConnection() {
-    var best = null;
-    var bestDist = Infinity;
-    var i;
-    var p;
-    var dx;
-    var dy;
-    var dist;
-
-    for (i = 0; i < particles.length; i += 1) {
-      p = particles[i];
-      if (!p.isSquare || !p.connected) continue;
-
-      dx = cursor.x - p.x;
-      dy = cursor.y - p.y;
-      dist = Math.sqrt(dx * dx + dy * dy);
-
-      if (dist < bestDist) {
-        bestDist = dist;
-        best = p;
-      }
-    }
-
-    if (!best) return;
-
-    for (i = 0; i < particles.length; i += 1) {
-      p = particles[i];
-      if (p.isSquare && p.connected && p !== best) {
         p.connected = false;
         p.linkAnim = 0;
       }
@@ -775,9 +663,8 @@
       }
     }
 
-    if (mouse.inHero) {
-      if (isCursorInTextZone()) enforceSingleConnection();
-      else enforceSingleSquareConnection();
+    if (mouse.inHero && isCursorInTextZone()) {
+      enforceSingleConnection();
     }
   }
 
@@ -839,51 +726,6 @@
     }
   }
 
-  function drawSquareParticle(p) {
-    var radius = p.r * 0.7;
-    var blink;
-    var glow;
-    var gradient;
-    var pulse;
-
-    if (p.linkAnim > 0) {
-      blink = 0.5 + 0.5 * Math.sin(time * 3.2 + p.phase);
-      pulse = p.linkAnim * (0.3 + 0.54 * blink);
-      glow = radius * (3.9 + 0.775 * blink);
-      gradient = ctx.createRadialGradient(p.x, p.y, glow * 0.08, p.x, p.y, glow);
-      gradient.addColorStop(0, "rgba(96, 51, 230, " + pulse + ")");
-      gradient.addColorStop(0.4, "rgba(96, 51, 230, " + pulse * 0.385 + ")");
-      gradient.addColorStop(0.87, "rgba(96, 51, 230, " + pulse * 0.06 + ")");
-      gradient.addColorStop(1, "rgba(96, 51, 230, 0)");
-      ctx.beginPath();
-      ctx.fillStyle = gradient;
-      ctx.arc(p.x, p.y, glow, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    gradient = ctx.createRadialGradient(p.x, p.y, radius * 0.1, p.x, p.y, radius * 1.28);
-    gradient.addColorStop(0, "rgba(96, 51, 230, 0.38)");
-    gradient.addColorStop(0.42, "rgba(96, 51, 230, 0.15)");
-    gradient.addColorStop(1, "rgba(96, 51, 230, 0)");
-    ctx.beginPath();
-    ctx.fillStyle = gradient;
-    ctx.arc(p.x, p.y, radius * 1.28, 0, Math.PI * 2);
-    ctx.fill();
-
-    if (p.linkAnim > 0) {
-      ctx.globalAlpha = p.linkAnim;
-      gradient = ctx.createRadialGradient(p.x, p.y, radius * 0.075, p.x, p.y, radius * 1.18);
-      gradient.addColorStop(0, "rgba(96, 51, 230, 0.78)");
-      gradient.addColorStop(0.5, "rgba(96, 51, 230, 0.42)");
-      gradient.addColorStop(1, "rgba(96, 51, 230, 0)");
-      ctx.beginPath();
-      ctx.fillStyle = gradient;
-      ctx.arc(p.x, p.y, radius * 1.18, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.globalAlpha = 1;
-    }
-  }
-
   function drawGreyGlow(p, core, mid, edge, scale) {
     var glow = p.r * scale;
     var cache = core >= 0.9 ? glowSprites.greyBright : glowSprites.greySoft;
@@ -892,11 +734,6 @@
   }
 
   function drawSoftParticle(p) {
-    if (p.isSquare) {
-      drawSquareParticle(p);
-      return;
-    }
-
     drawGreyGlow(p, 0.57, 0.22, 0.065, 1.03);
 
     if (p.linkAnim > 0) {
@@ -922,13 +759,9 @@
     var endX = anchorX + (p.x - anchorX) * p.linkAnim;
     var endY = anchorY + (p.y - anchorY) * p.linkAnim;
     var alpha = 0.12 + 0.18 * strength;
-    var isSquare = !!p.isSquare;
-    var lineR = isSquare ? 96 : 29;
-    var lineG = isSquare ? 51 : 29;
-    var lineB = isSquare ? 230 : 29;
 
     ctx.beginPath();
-    ctx.strokeStyle = "rgba(" + lineR + ", " + lineG + ", " + lineB + ", " + alpha + ")";
+    ctx.strokeStyle = "rgba(29, 29, 29, " + alpha + ")";
     ctx.lineWidth = 1;
     ctx.moveTo(anchorX, anchorY);
     ctx.lineTo(endX, endY);
@@ -1011,7 +844,6 @@
   document.addEventListener("pointermove", function (event) {
     mouse.clientX = event.clientX;
     mouse.clientY = event.clientY;
-    updateRingBlendColor(event.clientX, event.clientY);
 
     if (!mouse.visible) {
       mouse.visible = true;
