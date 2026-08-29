@@ -196,14 +196,14 @@
     var pad = sectionBoundsPad + 10;
     var roll = Math.random();
 
-    if (roll < 0.36) {
+    if (roll < 0.16) {
       return {
         x: rand(width * 0.56, width - pad),
         y: rand(pad, height * 0.44)
       };
     }
 
-    if (roll < 0.72) {
+    if (roll < 0.32) {
       return {
         x: rand(pad, width * 0.44),
         y: rand(height * 0.56, height - pad)
