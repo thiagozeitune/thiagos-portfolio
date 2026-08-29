@@ -41,15 +41,26 @@
   var particlesReady = false;
   var heroRect = { left: 0, top: 0, right: 0, bottom: 0 };
   var textZone = { left: 0, top: 0, width: 0, height: 0 };
+  var navRect = { left: 0, top: 0, right: 0, bottom: 0 };
+  var navEl = hero.querySelector(".nav");
   var glowSprites = { greySoft: {}, greyBright: {} };
 
   function syncLayoutCache() {
     var rect = hero.getBoundingClientRect();
+    var navBounds;
     heroRect.left = rect.left;
     heroRect.top = rect.top;
     heroRect.right = rect.right;
     heroRect.bottom = rect.bottom;
     textZone = getTextZone();
+
+    if (navEl) {
+      navBounds = navEl.getBoundingClientRect();
+      navRect.left = navBounds.left;
+      navRect.top = navBounds.top;
+      navRect.right = navBounds.right;
+      navRect.bottom = navBounds.bottom;
+    }
   }
 
   function glowSpriteKey(radius) {
@@ -218,6 +229,21 @@
 
   function isCursorInTextZone() {
     return mouse.inHero && isInTextZone(cursor.x, cursor.y);
+  }
+
+  function isCursorInNavZone() {
+    var pad = 12;
+    if (!navEl) return false;
+    return (
+      mouse.clientX >= navRect.left - pad &&
+      mouse.clientX <= navRect.right + pad &&
+      mouse.clientY >= navRect.top - pad &&
+      mouse.clientY <= navRect.bottom + pad
+    );
+  }
+
+  function shouldReleaseConnections() {
+    return !mouse.inHero || isCursorInNavZone();
   }
 
   function keepOutOfTextZone(p) {
@@ -633,7 +659,7 @@
         continue;
       }
 
-      if (!mouse.inHero) {
+      if (shouldReleaseConnections()) {
         p.connected = false;
         p.linkAnim = 0;
       } else {
@@ -663,7 +689,7 @@
       }
     }
 
-    if (mouse.inHero && isCursorInTextZone()) {
+    if (mouse.inHero && !isCursorInNavZone() && isCursorInTextZone()) {
       enforceSingleConnection();
     }
   }
@@ -798,7 +824,7 @@
       }
     }
 
-    if (mouse.inHero) {
+    if (mouse.inHero && !isCursorInNavZone()) {
       for (k = 0; k < particles.length; k += 1) {
         p = particles[k];
         if (p.isStar || !p.connected) continue;

@@ -1,0 +1,65 @@
+/* Reusable fixed bottom-left options lab panel */
+.options-lab {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 10001;
+  width: 236px;
+  padding: 14px 14px 12px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(29, 29, 29, 0.12);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.08);
+  backdrop-filter: blur(10px);
+  font-family: Khula, sans-serif;
+  color: #1d1d1d;
+}
+
+.options-lab__title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+  opacity: 0.55;
+}
+
+.options-lab__options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.options-lab__option {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: #1d1d1d;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.options-lab__option:hover {
+  background: rgba(255, 255, 0, 0.35);
+}
+
+.options-lab__option.is-active {
+  background: #ffff00;
+  font-weight: 600;
+}
+
+.options-lab__hint {
+  margin-top: 10px;
+  font-size: 11px;
+  line-height: 1.35;
+  opacity: 0.5;
+}
+
+@media screen and (max-width: 991px) {
+  .options-lab {
+    display: none;
+  }
+}
