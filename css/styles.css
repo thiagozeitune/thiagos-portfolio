@@ -150,6 +150,10 @@ img {
   transform: scale(1);
 }
 
+.hero-cursor-ring.is-ready.is-visible.is-lite {
+  opacity: 0.35;
+}
+
 .hero-scroll-hint {
   position: absolute;
   bottom: 28px;

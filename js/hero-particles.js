@@ -44,6 +44,18 @@
   var navRect = { left: 0, top: 0, right: 0, bottom: 0 };
   var navEl = hero.querySelector(".nav");
   var glowSprites = { greySoft: {}, greyBright: {} };
+  var heroInView = true;
+  var loopActive = false;
+  var liteMode = false;
+  var batteryLite = false;
+  var slowFrameStreak = 0;
+  var goodFrameStreak = 0;
+  var lastFrameTime = 0;
+  var lastStepTime = 0;
+  var targetFps = 60;
+  var liteTargetFps = 30;
+  var fullParticleCount = particleCount;
+  var liteParticleCount = 10;
 
   function syncLayoutCache() {
     var rect = hero.getBoundingClientRect();
@@ -393,8 +405,9 @@
 
   function createParticles() {
     particles = [];
-    var count = Math.round(particleCount * Math.min(1, width / 900));
-    count = Math.max(14, count);
+    var target = liteMode ? liteParticleCount : fullParticleCount;
+    var count = Math.round(target * Math.min(1, width / 900));
+    count = Math.max(liteMode ? 8 : 14, count);
     var positions = createRandomPositions(count);
 
     for (var i = 0; i < count; i += 1) {
@@ -417,22 +430,92 @@
       });
     }
 
-    createShootingStars();
+    if (!liteMode) createShootingStars();
+  }
+
+  function applyCanvasScale() {
+    dpr = liteMode ? 1 : Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.floor(width * dpr);
+    canvas.height = Math.floor(height * dpr);
+    canvas.style.width = width + "px";
+    canvas.style.height = height + "px";
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
   function resize() {
     var rect = hero.getBoundingClientRect();
     width = rect.width;
     height = rect.height;
-    dpr = Math.min(window.devicePixelRatio || 1, 2);
-    canvas.width = Math.floor(width * dpr);
-    canvas.height = Math.floor(height * dpr);
-    canvas.style.width = width + "px";
-    canvas.style.height = height + "px";
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    applyCanvasScale();
     syncLayoutCache();
     resetGlowSprites();
     createParticles();
+  }
+
+  function releaseAllConnections() {
+    var i;
+    var p;
+    for (i = 0; i < particles.length; i += 1) {
+      p = particles[i];
+      p.connected = false;
+      p.linkAnim = 0;
+      if (p.isStar && p.active) deactivateShootingStar(p);
+    }
+  }
+
+  function setLiteMode(on) {
+    if (liteMode === !!on) return;
+    liteMode = !!on;
+    releaseAllConnections();
+    applyCanvasScale();
+    resetGlowSprites();
+    createParticles();
+    if (liteMode) {
+      ring.classList.add("is-lite");
+    } else {
+      ring.classList.remove("is-lite");
+    }
+  }
+
+  function updateQuality(dt) {
+    var slowThreshold = liteMode ? 45 : 36;
+    var goodThreshold = liteMode ? 34 : 20;
+
+    if (dt > slowThreshold) {
+      slowFrameStreak += 1;
+      goodFrameStreak = 0;
+    } else if (dt < goodThreshold) {
+      goodFrameStreak += 1;
+      slowFrameStreak = Math.max(0, slowFrameStreak - 1);
+    } else {
+      slowFrameStreak = Math.max(0, slowFrameStreak - 1);
+      goodFrameStreak = Math.max(0, goodFrameStreak - 1);
+    }
+
+    if (!liteMode && (batteryLite || slowFrameStreak >= 10)) {
+      setLiteMode(true);
+      return;
+    }
+
+    if (liteMode && !batteryLite && goodFrameStreak >= 90) {
+      setLiteMode(false);
+    }
+  }
+
+  function watchBattery() {
+    if (!navigator.getBattery) return;
+    navigator.getBattery().then(function (battery) {
+      function syncBattery() {
+        batteryLite = !battery.charging && battery.level <= 0.3;
+        if (batteryLite) setLiteMode(true);
+        else if (liteMode && goodFrameStreak >= 90) setLiteMode(false);
+      }
+      battery.addEventListener("levelchange", syncBattery);
+      battery.addEventListener("chargingchange", syncBattery);
+      syncBattery();
+    }).catch(function () {
+      /* unsupported / denied */
+    });
   }
 
   function setRingPosition(x, y) {
@@ -659,7 +742,7 @@
         continue;
       }
 
-      if (shouldReleaseConnections()) {
+      if (shouldReleaseConnections() || liteMode) {
         p.connected = false;
         p.linkAnim = 0;
       } else {
@@ -689,7 +772,7 @@
       }
     }
 
-    if (mouse.inHero && !isCursorInNavZone() && isCursorInTextZone()) {
+    if (mouse.inHero && !liteMode && isCursorInTextZone()) {
       enforceSingleConnection();
     }
   }
@@ -752,6 +835,13 @@
     }
   }
 
+  function drawSimpleDot(p, alpha) {
+    ctx.beginPath();
+    ctx.fillStyle = "rgba(29, 29, 29, " + alpha + ")";
+    ctx.arc(p.x, p.y, Math.max(1.2, p.r * 0.9), 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   function drawGreyGlow(p, core, mid, edge, scale) {
     var glow = p.r * scale;
     var cache = core >= 0.9 ? glowSprites.greyBright : glowSprites.greySoft;
@@ -760,6 +850,11 @@
   }
 
   function drawSoftParticle(p) {
+    if (liteMode) {
+      drawSimpleDot(p, 0.42);
+      return;
+    }
+
     drawGreyGlow(p, 0.57, 0.22, 0.065, 1.03);
 
     if (p.linkAnim > 0) {
@@ -770,7 +865,7 @@
   }
 
   function drawShootingStar(p) {
-    if (!p.active) return;
+    if (!p.active || liteMode) return;
 
     drawGreyGlow(p, 0.73, 0.27, 0.08, 1.11);
 
@@ -824,7 +919,7 @@
       }
     }
 
-    if (mouse.inHero && !isCursorInNavZone()) {
+    if (mouse.inHero && !isCursorInNavZone() && !liteMode) {
       for (k = 0; k < particles.length; k += 1) {
         p = particles[k];
         if (p.isStar || !p.connected) continue;
@@ -852,12 +947,54 @@
     if (particlesReady) return;
     particlesReady = true;
     if (particlesLayer) particlesLayer.classList.add("is-revealed");
+    startLoop();
   }
 
-  function loop() {
-    time += 0.008;
-    syncLayoutCache();
+  function stopLoop() {
+    if (rafId) window.cancelAnimationFrame(rafId);
+    rafId = 0;
+    loopActive = false;
+    releaseAllConnections();
+  }
+
+  function startLoop() {
+    if (loopActive || document.hidden || !heroInView) return;
+    loopActive = true;
+    lastFrameTime = performance.now();
+    lastStepTime = 0;
+    rafId = window.requestAnimationFrame(loop);
+  }
+
+  function loop(now) {
+    var dt;
+    var stepDt;
+    var interval;
+
+    rafId = 0;
+    if (document.hidden || !heroInView) {
+      loopActive = false;
+      return;
+    }
+
+    now = now || performance.now();
+    dt = lastFrameTime ? now - lastFrameTime : 16;
+    lastFrameTime = now;
+
     updateCursorMotion();
+
+    // Cap only in lite mode; full quality follows the display refresh.
+    interval = liteMode ? 1000 / liteTargetFps : 1000 / targetFps;
+    if (liteMode && lastStepTime && now - lastStepTime < interval) {
+      rafId = window.requestAnimationFrame(loop);
+      return;
+    }
+
+    stepDt = lastStepTime ? now - lastStepTime : interval;
+    lastStepTime = now;
+    updateQuality(stepDt);
+
+    time += stepDt * 0.00048;
+    syncLayoutCache();
 
     if (particlesReady) {
       updateParticles();
@@ -877,6 +1014,8 @@
       cursorClient.y = event.clientY;
       ring.classList.add("is-visible");
     }
+
+    if (heroInView && !loopActive) startLoop();
   });
 
   document.documentElement.addEventListener("pointerleave", function () {
@@ -888,15 +1027,27 @@
   window.addEventListener("resize", resize);
   resize();
   ring.classList.add("is-ready");
-  loop();
-
-  document.addEventListener("hero-typewriter-complete", revealParticles);
+  watchBattery();
+  revealParticles();
+  startLoop();
 
   document.addEventListener("visibilitychange", function () {
     if (document.hidden) {
-      window.cancelAnimationFrame(rafId);
+      stopLoop();
       return;
     }
-    loop();
+    startLoop();
   });
+
+  if (typeof IntersectionObserver !== "undefined") {
+    new IntersectionObserver(
+      function (entries) {
+        var entry = entries[0];
+        heroInView = !!(entry && entry.isIntersecting && entry.intersectionRatio > 0.02);
+        if (heroInView) startLoop();
+        else stopLoop();
+      },
+      { threshold: [0, 0.02, 0.1, 0.25] }
+    ).observe(hero);
+  }
 })();
