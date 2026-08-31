@@ -43,9 +43,10 @@
   var textZone = { left: 0, top: 0, width: 0, height: 0 };
   var navRect = { left: 0, top: 0, right: 0, bottom: 0 };
   var navEl = hero.querySelector(".nav");
-  var glowSprites = { greySoft: {}, greyBright: {} };
   var heroInView = true;
   var loopActive = false;
+  var cursorLoopActive = false;
+  var cursorRafId = 0;
   var liteMode = false;
   var batteryLite = false;
   var slowFrameStreak = 0;
@@ -56,6 +57,7 @@
   var liteTargetFps = 30;
   var fullParticleCount = particleCount;
   var liteParticleCount = 10;
+  var ripples = [];
 
   function syncLayoutCache() {
     var rect = hero.getBoundingClientRect();
@@ -73,53 +75,6 @@
       navRect.right = navBounds.right;
       navRect.bottom = navBounds.bottom;
     }
-  }
-
-  function glowSpriteKey(radius) {
-    return Math.max(4, Math.round(radius * 2));
-  }
-
-  function createGlowSprite(r, g, b, core, mid, edge, radius) {
-    var size = Math.ceil(radius * 2);
-    var canvas = document.createElement("canvas");
-    var spriteCtx = canvas.getContext("2d");
-    var gradient;
-    canvas.width = size;
-    canvas.height = size;
-    gradient = spriteCtx.createRadialGradient(
-      size / 2,
-      size / 2,
-      radius * 0.09,
-      size / 2,
-      size / 2,
-      radius
-    );
-    gradient.addColorStop(0, "rgba(" + r + ", " + g + ", " + b + ", " + core + ")");
-    gradient.addColorStop(0.445, "rgba(" + r + ", " + g + ", " + b + ", " + mid + ")");
-    gradient.addColorStop(0.81, "rgba(" + r + ", " + g + ", " + b + ", " + edge + ")");
-    gradient.addColorStop(1, "rgba(" + r + ", " + g + ", " + b + ", 0)");
-    spriteCtx.fillStyle = gradient;
-    spriteCtx.fillRect(0, 0, size, size);
-    return { canvas: canvas, radius: radius, size: size };
-  }
-
-  function getGlowSprite(cache, r, g, b, core, mid, edge, radius) {
-    var key = glowSpriteKey(radius);
-    if (!cache[key]) {
-      cache[key] = createGlowSprite(r, g, b, core, mid, edge, radius);
-    }
-    return cache[key];
-  }
-
-  function drawGlowSprite(sprite, x, y, alpha) {
-    if (alpha != null && alpha < 1) ctx.globalAlpha = alpha;
-    ctx.drawImage(sprite.canvas, x - sprite.size / 2, y - sprite.size / 2);
-    if (alpha != null && alpha < 1) ctx.globalAlpha = 1;
-  }
-
-  function resetGlowSprites() {
-    glowSprites.greySoft = {};
-    glowSprites.greyBright = {};
   }
 
   function rand(min, max) {
@@ -369,7 +324,7 @@
     p.homeY = p.y;
     p.vx = Math.cos(angle) * speed;
     p.vy = Math.sin(angle) * speed;
-    p.r = rand(1.55, 2.5);
+    p.r = rand(1.2, 1.95);
     p.phase = rand(0, Math.PI * 2);
     p.driftRate = 1;
     p.driftAmp = 0;
@@ -405,6 +360,7 @@
 
   function createParticles() {
     particles = [];
+    ripples = [];
     var target = liteMode ? liteParticleCount : fullParticleCount;
     var count = Math.round(target * Math.min(1, width / 900));
     count = Math.max(liteMode ? 8 : 14, count);
@@ -420,13 +376,16 @@
         homeY: pos.y,
         vx: rand(-0.04, 0.04) * driftRate,
         vy: rand(-0.04, 0.04) * driftRate,
-        r: rand(1.6, 2.7),
+        r: rand(1.25, 2.05),
         phase: rand(0, Math.PI * 2),
         driftRate: driftRate,
         driftAmp: rand(0.0045, 0.01) * (0.85 + driftRate * 0.12),
         connected: false,
         restLength: 0,
-        linkAnim: 0
+        linkAnim: 0,
+        nextBlink: rand(10, 28),
+        blinkUntil: 0,
+        blinkPeak: 0
       });
     }
 
@@ -448,7 +407,6 @@
     height = rect.height;
     applyCanvasScale();
     syncLayoutCache();
-    resetGlowSprites();
     createParticles();
   }
 
@@ -468,13 +426,7 @@
     liteMode = !!on;
     releaseAllConnections();
     applyCanvasScale();
-    resetGlowSprites();
     createParticles();
-    if (liteMode) {
-      ring.classList.add("is-lite");
-    } else {
-      ring.classList.remove("is-lite");
-    }
   }
 
   function updateQuality(dt) {
@@ -836,30 +788,170 @@
   }
 
   function drawSimpleDot(p, alpha) {
+    var blink = blinkAmount(p);
+    var connected = p.connected ? 1 : 0;
+    var r;
+    var g;
+    var b;
+    var a = alpha;
+
+    if (connected) {
+      r = 255;
+      g = 0;
+      b = 170;
+      a = alpha * (0.55 + 0.18 * blink);
+    } else {
+      r = 29;
+      g = 29;
+      b = 29;
+      a = alpha * (0.45 + 0.22 * blink);
+    }
+
     ctx.beginPath();
-    ctx.fillStyle = "rgba(29, 29, 29, " + alpha + ")";
-    ctx.arc(p.x, p.y, Math.max(1.2, p.r * 0.9), 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(" + r + ", " + g + ", " + b + ", " + a + ")";
+    ctx.arc(p.x, p.y, Math.max(0.95, p.r * (0.9 + 0.06 * blink)), 0, Math.PI * 2);
     ctx.fill();
   }
 
   function drawGreyGlow(p, core, mid, edge, scale) {
-    var glow = p.r * scale;
-    var cache = core >= 0.9 ? glowSprites.greyBright : glowSprites.greySoft;
-    var sprite = getGlowSprite(cache, 29, 29, 29, core, mid, edge, glow);
-    drawGlowSprite(sprite, p.x, p.y);
+    var radius = Math.max(0.95, p.r * Math.min(scale, 1.15) * 0.92);
+    ctx.beginPath();
+    ctx.fillStyle = "rgba(29, 29, 29, " + core + ")";
+    ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawMagentaGlow(p, core, mid, edge, scale, alpha) {
+    var radius = Math.max(0.95, p.r * Math.min(scale, 1.15) * 0.92);
+    var a = alpha == null ? 1 : alpha;
+    ctx.beginPath();
+    ctx.fillStyle = "rgba(255, 0, 170, " + core * a + ")";
+    ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function spawnBlinkRipples(p) {
+    var i;
+    var rings;
+    if (liteMode || !p) return;
+    rings = 2 + Math.floor(rand(0, 1.999));
+    for (i = 0; i < rings; i += 1) {
+      ripples.push({
+        particle: p,
+        born: time + i * 0.14,
+        life: rand(1.15, 1.7),
+        maxRadius: rand(52, 96),
+        lineWidth: rand(1.05, 1.7)
+      });
+    }
+  }
+
+  function pruneRipples() {
+    var alive = [];
+    var i;
+    var ripple;
+    var age;
+    for (i = 0; i < ripples.length; i += 1) {
+      ripple = ripples[i];
+      age = time - ripple.born;
+      if (age < ripple.life && ripple.particle) alive.push(ripple);
+    }
+    ripples = alive;
+  }
+
+  function drawRipples() {
+    var i;
+    var ripple;
+    var age;
+    var t;
+    var radius;
+    var alpha;
+    var eased;
+    var x;
+    var y;
+    var stroke;
+
+    if (!ripples.length || liteMode) return;
+
+    for (i = 0; i < ripples.length; i += 1) {
+      ripple = ripples[i];
+      if (!ripple.particle) continue;
+      age = time - ripple.born;
+      if (age < 0) continue;
+      t = age / ripple.life;
+      if (t >= 1) continue;
+
+      eased = 1 - Math.pow(1 - t, 2.2);
+      radius = ripple.maxRadius * eased;
+      alpha = (1 - t) * (1 - t) * 0.22;
+      x = ripple.particle.x;
+      y = ripple.particle.y;
+      stroke = ripple.particle.connected
+        ? "rgba(255, 0, 170, " + alpha + ")"
+        : "rgba(29, 29, 29, " + alpha + ")";
+
+      ctx.beginPath();
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = ripple.lineWidth * (1 - t * 0.55);
+      ctx.arc(x, y, Math.max(0.5, radius), 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+
+  function blinkAmount(p) {
+    var start;
+    var rise;
+    var fall;
+    if (!p || p.isStar) return 0;
+
+    if (time >= p.nextBlink && time >= p.blinkUntil) {
+      rise = rand(0.18, 0.32);
+      fall = rand(0.35, 0.65);
+      p.blinkPeak = time + rise;
+      p.blinkUntil = p.blinkPeak + fall;
+      p.nextBlink = p.blinkUntil + rand(16, 38);
+      spawnBlinkRipples(p);
+    }
+
+    if (!p.blinkPeak || time >= p.blinkUntil) return 0;
+
+    start = p.blinkPeak - (p.blinkUntil - p.blinkPeak) * 0.55;
+    if (time < start) return 0;
+
+    if (time <= p.blinkPeak) {
+      return Math.max(0, Math.min(1, (time - start) / Math.max(0.08, p.blinkPeak - start)));
+    }
+
+    return Math.max(0, Math.min(1, (p.blinkUntil - time) / Math.max(0.08, p.blinkUntil - p.blinkPeak)));
   }
 
   function drawSoftParticle(p) {
+    var blink;
+    var core;
+
     if (liteMode) {
       drawSimpleDot(p, 0.42);
       return;
     }
 
-    drawGreyGlow(p, 0.57, 0.22, 0.065, 1.03);
+    blink = blinkAmount(p);
+
+    if (p.connected) {
+      core = 0.55 + 0.12 * blink;
+      drawMagentaGlow(p, core, 0.28, 0.08, 1.05 + 0.04 * blink, 1);
+    } else {
+      core = 0.38 + 0.16 * blink;
+      drawGreyGlow(p, core, 0.22, 0.065, 1.02 + 0.04 * blink);
+    }
 
     if (p.linkAnim > 0) {
-      ctx.globalAlpha = p.linkAnim;
-      drawGreyGlow(p, 0.98, 0.585, 0.2, 1.03);
+      if (p.connected) {
+        ctx.globalAlpha = p.linkAnim * 0.85;
+        drawMagentaGlow(p, 0.78, 0.585, 0.2, 1.03 + 0.03 * blink, 1);
+      } else {
+        ctx.globalAlpha = p.linkAnim * 0.75;
+        drawGreyGlow(p, 0.72, 0.585, 0.2, 1.03);
+      }
       ctx.globalAlpha = 1;
     }
   }
@@ -919,6 +1011,9 @@
       }
     }
 
+    pruneRipples();
+    drawRipples();
+
     if (mouse.inHero && !isCursorInNavZone() && !liteMode) {
       for (k = 0; k < particles.length; k += 1) {
         p = particles[k];
@@ -950,15 +1045,40 @@
     startLoop();
   }
 
+  function stopCursorLoop() {
+    if (cursorRafId) window.cancelAnimationFrame(cursorRafId);
+    cursorRafId = 0;
+    cursorLoopActive = false;
+  }
+
+  function startCursorLoop() {
+    if (cursorLoopActive || loopActive || document.hidden || !mouse.visible) return;
+    cursorLoopActive = true;
+    cursorRafId = window.requestAnimationFrame(cursorLoop);
+  }
+
+  function cursorLoop() {
+    cursorRafId = 0;
+    if (document.hidden || !mouse.visible || loopActive) {
+      cursorLoopActive = false;
+      return;
+    }
+
+    updateCursorMotion();
+    cursorRafId = window.requestAnimationFrame(cursorLoop);
+  }
+
   function stopLoop() {
     if (rafId) window.cancelAnimationFrame(rafId);
     rafId = 0;
     loopActive = false;
     releaseAllConnections();
+    startCursorLoop();
   }
 
   function startLoop() {
     if (loopActive || document.hidden || !heroInView) return;
+    stopCursorLoop();
     loopActive = true;
     lastFrameTime = performance.now();
     lastStepTime = 0;
@@ -973,6 +1093,7 @@
     rafId = 0;
     if (document.hidden || !heroInView) {
       loopActive = false;
+      startCursorLoop();
       return;
     }
 
@@ -1015,28 +1136,37 @@
       ring.classList.add("is-visible");
     }
 
-    if (heroInView && !loopActive) startLoop();
+    if (heroInView) {
+      if (!loopActive) startLoop();
+    } else {
+      startCursorLoop();
+    }
   });
 
   document.documentElement.addEventListener("pointerleave", function () {
     mouse.visible = false;
     mouse.inHero = false;
     ring.classList.remove("is-visible");
+    stopCursorLoop();
   });
 
   window.addEventListener("resize", resize);
   resize();
-  ring.classList.add("is-ready");
   watchBattery();
   revealParticles();
   startLoop();
 
   document.addEventListener("visibilitychange", function () {
     if (document.hidden) {
-      stopLoop();
+      stopCursorLoop();
+      if (rafId) window.cancelAnimationFrame(rafId);
+      rafId = 0;
+      loopActive = false;
+      releaseAllConnections();
       return;
     }
-    startLoop();
+    if (heroInView) startLoop();
+    else startCursorLoop();
   });
 
   if (typeof IntersectionObserver !== "undefined") {
