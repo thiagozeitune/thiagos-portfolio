@@ -34,7 +34,8 @@
   var maxDriftSpeed = 0.11;
   var pullDamping = 0.992;
   var driftDamping = 0.996;
-  var linkAnimSpeed = 0.05;
+  var linkAnimSpeed = 0.11;
+  var colorMixSpeed = 0.014;
   var sectionBoundsPad = 10;
   var rafId = 0;
   var time = 0;
@@ -304,6 +305,7 @@
     p.active = false;
     p.connected = false;
     p.linkAnim = 0;
+    p.colorMix = 0;
     p.cooldown = rand(3200, 9800);
   }
 
@@ -312,7 +314,7 @@
   }
 
   function launchShootingStar(p, initialDelay) {
-    var speed = rand(1.35, 2.05);
+    var speed = rand(0.28, 0.55);
     var angle;
     var pad = sectionBoundsPad + 12;
 
@@ -324,7 +326,7 @@
     p.homeY = p.y;
     p.vx = Math.cos(angle) * speed;
     p.vy = Math.sin(angle) * speed;
-    p.r = rand(1.2, 1.95);
+    p.r = rand(1.4, 3.2);
     p.phase = rand(0, Math.PI * 2);
     p.driftRate = 1;
     p.driftAmp = 0;
@@ -333,6 +335,8 @@
     p.connected = false;
     p.restLength = 0;
     p.linkAnim = 0;
+    p.colorMix = 0;
+    p.depth = 0;
   }
 
   function createShootingStars() {
@@ -351,7 +355,8 @@
         driftAmp: 0,
         connected: false,
         restLength: 0,
-        linkAnim: 0
+        linkAnim: 0,
+        colorMix: 0
       };
       launchShootingStar(star, rand(800, 6200) + i * 1400);
       particles.push(star);
@@ -369,20 +374,25 @@
     for (var i = 0; i < count; i += 1) {
       var pos = positions[i];
       var driftRate = rand(0.62, 1.38);
+      var speed = rand(0.55, 1.05) * driftRate;
+      var angle = rand(-Math.PI * 0.78, -Math.PI * 0.22);
       particles.push({
         x: pos.x,
         y: pos.y,
         homeX: pos.x,
         homeY: pos.y,
-        vx: rand(-0.04, 0.04) * driftRate,
-        vy: rand(-0.04, 0.04) * driftRate,
-        r: rand(1.25, 2.05),
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        r: Math.pow(rand(0.12, 1), 0.72) * 10.5 + 2.4,
         phase: rand(0, Math.PI * 2),
+        phaseY: rand(0, Math.PI * 2),
         driftRate: driftRate,
         driftAmp: rand(0.0045, 0.01) * (0.85 + driftRate * 0.12),
+        riseBoost: rand(1.6, 2.4),
         connected: false,
         restLength: 0,
         linkAnim: 0,
+        colorMix: 0,
         nextBlink: rand(10, 28),
         blinkUntil: 0,
         blinkPeak: 0
@@ -416,7 +426,6 @@
     for (i = 0; i < particles.length; i += 1) {
       p = particles[i];
       p.connected = false;
-      p.linkAnim = 0;
       if (p.isStar && p.active) deactivateShootingStar(p);
     }
   }
@@ -535,7 +544,24 @@
   function bindParticle(p, dist) {
     p.connected = true;
     p.restLength = Math.max(minRestLengthFloor, dist);
-    p.linkAnim = 0;
+    if (p.linkAnim < 0.02) p.linkAnim = 0;
+  }
+
+  function updateColorMix(p) {
+    if (p.connected) {
+      // Connect the line first, then ease grey → magenta.
+      p.linkAnim = Math.min(1, p.linkAnim + linkAnimSpeed);
+      if (p.linkAnim >= 0.98) {
+        p.colorMix = Math.min(1, (p.colorMix || 0) + colorMixSpeed);
+      }
+    } else {
+      // Reverse: fade color first, then retract the line.
+      if ((p.colorMix || 0) > 0.001) {
+        p.colorMix = Math.max(0, (p.colorMix || 0) - colorMixSpeed * 1.15);
+      } else {
+        p.linkAnim = Math.max(0, p.linkAnim - linkAnimSpeed);
+      }
+    }
   }
 
   function enforceSingleConnection() {
@@ -567,7 +593,6 @@
       p = particles[i];
       if (!p.isStar && p.connected && p !== best) {
         p.connected = false;
-        p.linkAnim = 0;
       }
     }
   }
@@ -625,6 +650,7 @@
     var dx;
     var dy;
     var dist;
+    var force;
 
     if (p.connected || !isInTextZone(p.x, p.y)) return;
 
@@ -633,27 +659,37 @@
     dx = p.x - cx;
     dy = p.y - cy;
     dist = Math.sqrt(dx * dx + dy * dy) || 1;
-    p.vx += (dx / dist) * 0.055;
-    p.vy += (dy / dist) * 0.055;
+    // Prefer sideways escape so particles don't collectively sink below the headline.
+    force = 0.04;
+    p.vx += (dx / dist) * force * 1.35;
+    p.vy += (dy / dist) * force * 0.55;
   }
 
   function applyNaturalDrift(p) {
     var t;
+    var ty;
     var speed;
     var minSpeed = 0.015 * p.driftRate;
 
     if (p.connected) return;
 
+    if (p.riseBoost > 0) {
+      p.vy -= 0.085 * p.riseBoost;
+      p.vx += rand(-0.01, 0.01) * p.riseBoost;
+      p.riseBoost = Math.max(0, p.riseBoost - 0.018);
+    }
+
     t = (time + p.phase) * p.driftRate;
+    ty = (time + (p.phaseY || p.phase)) * p.driftRate;
     p.vx += Math.cos(t * 0.34) * p.driftAmp;
-    p.vy += Math.sin(t * 0.37) * p.driftAmp;
+    p.vy += Math.sin(ty * 0.34) * p.driftAmp;
     p.vx += Math.cos(t * 0.22 + p.phase) * p.driftAmp * 0.55;
-    p.vy += Math.sin(t * 0.25 + p.phase) * p.driftAmp * 0.55;
+    p.vy += Math.sin(ty * 0.22 + (p.phaseY || p.phase)) * p.driftAmp * 0.55;
 
     speed = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
     if (speed < minSpeed) {
       p.vx += Math.cos(t * 0.72) * minSpeed * 0.075;
-      p.vy += Math.sin(t * 0.72) * minSpeed * 0.075;
+      p.vy += Math.sin(ty * 0.72) * minSpeed * 0.075;
     }
   }
 
@@ -690,13 +726,12 @@
 
       if (p.isStar) {
         p.connected = false;
-        p.linkAnim = 0;
+        updateColorMix(p);
         continue;
       }
 
       if (shouldReleaseConnections() || liteMode) {
         p.connected = false;
-        p.linkAnim = 0;
       } else {
         dx = cursor.x - p.x;
         dy = cursor.y - p.y;
@@ -711,12 +746,11 @@
         }
 
         if (p.connected) {
-          p.linkAnim = Math.min(1, p.linkAnim + linkAnimSpeed);
           applyElasticForce(p, dx, dy, dist);
-        } else {
-          p.linkAnim = 0;
         }
       }
+
+      updateColorMix(p);
 
       if (!p.connected && !(p.isStar && p.active)) {
         applyHomeForces(p);
@@ -761,7 +795,7 @@
         p,
         p.connected
           ? maxPullSpeed
-          : maxDriftSpeed * (p.driftRate || 1)
+          : maxDriftSpeed * (p.driftRate || 1) * (p.riseBoost > 0 ? 6.5 : 1)
       );
 
       p.x += p.vx;
@@ -789,45 +823,37 @@
 
   function drawSimpleDot(p, alpha) {
     var blink = blinkAmount(p);
-    var connected = p.connected ? 1 : 0;
-    var r;
-    var g;
-    var b;
-    var a = alpha;
+    var mix = p.colorMix || 0;
+    var r = Math.round(242 + (255 - 242) * mix);
+    var g = Math.round(242 + (0 - 242) * mix);
+    var b = Math.round(242 + (170 - 242) * mix);
 
-    if (connected) {
-      r = 255;
-      g = 0;
-      b = 170;
-      a = alpha * (0.55 + 0.18 * blink);
-    } else {
-      r = 29;
-      g = 29;
-      b = 29;
-      a = alpha * (0.45 + 0.22 * blink);
-    }
+    ctx.beginPath();
+    ctx.fillStyle = "rgba(" + r + ", " + g + ", " + b + ", " + alpha + ")";
+    ctx.arc(p.x, p.y, Math.max(2, p.r * (0.9 + 0.06 * blink)), 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawParticleDot(p, scale, alpha) {
+    var mix = p.colorMix || 0;
+    var radius = Math.max(2, p.r * Math.min(scale, 1.15) * 0.92);
+    var r = Math.round(242 + (255 - 242) * mix);
+    var g = Math.round(242 + (0 - 242) * mix);
+    var b = Math.round(242 + (170 - 242) * mix);
+    var a = alpha == null ? 1 : alpha;
 
     ctx.beginPath();
     ctx.fillStyle = "rgba(" + r + ", " + g + ", " + b + ", " + a + ")";
-    ctx.arc(p.x, p.y, Math.max(0.95, p.r * (0.9 + 0.06 * blink)), 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
     ctx.fill();
   }
 
   function drawGreyGlow(p, core, mid, edge, scale) {
-    var radius = Math.max(0.95, p.r * Math.min(scale, 1.15) * 0.92);
-    ctx.beginPath();
-    ctx.fillStyle = "rgba(29, 29, 29, " + core + ")";
-    ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
-    ctx.fill();
+    drawParticleDot(p, scale, core);
   }
 
   function drawMagentaGlow(p, core, mid, edge, scale, alpha) {
-    var radius = Math.max(0.95, p.r * Math.min(scale, 1.15) * 0.92);
-    var a = alpha == null ? 1 : alpha;
-    ctx.beginPath();
-    ctx.fillStyle = "rgba(255, 0, 170, " + core * a + ")";
-    ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
-    ctx.fill();
+    drawParticleDot(p, scale, core * (alpha == null ? 1 : alpha));
   }
 
   function spawnBlinkRipples(p) {
@@ -886,9 +912,9 @@
       alpha = (1 - t) * (1 - t) * 0.22;
       x = ripple.particle.x;
       y = ripple.particle.y;
-      stroke = ripple.particle.connected
+      stroke = (ripple.particle.colorMix || 0) > 0.35
         ? "rgba(255, 0, 170, " + alpha + ")"
-        : "rgba(29, 29, 29, " + alpha + ")";
+        : "rgba(242, 242, 242, " + alpha + ")";
 
       ctx.beginPath();
       ctx.strokeStyle = stroke;
@@ -927,31 +953,21 @@
 
   function drawSoftParticle(p) {
     var blink;
-    var core;
+    var mix;
 
     if (liteMode) {
-      drawSimpleDot(p, 0.42);
+      drawSimpleDot(p, 1);
       return;
     }
 
     blink = blinkAmount(p);
+    mix = p.colorMix || 0;
 
-    if (p.connected) {
-      core = 0.55 + 0.12 * blink;
-      drawMagentaGlow(p, core, 0.28, 0.08, 1.05 + 0.04 * blink, 1);
-    } else {
-      core = 0.38 + 0.16 * blink;
-      drawGreyGlow(p, core, 0.22, 0.065, 1.02 + 0.04 * blink);
-    }
+    drawParticleDot(p, 1.02 + 0.04 * blink + 0.04 * mix, 1);
 
-    if (p.linkAnim > 0) {
-      if (p.connected) {
-        ctx.globalAlpha = p.linkAnim * 0.85;
-        drawMagentaGlow(p, 0.78, 0.585, 0.2, 1.03 + 0.03 * blink, 1);
-      } else {
-        ctx.globalAlpha = p.linkAnim * 0.75;
-        drawGreyGlow(p, 0.72, 0.585, 0.2, 1.03);
-      }
+    if (p.linkAnim > 0.02) {
+      ctx.globalAlpha = p.linkAnim * (0.35 + 0.45 * mix);
+      drawParticleDot(p, 1.03 + 0.03 * blink, 1);
       ctx.globalAlpha = 1;
     }
   }
@@ -959,13 +975,9 @@
   function drawShootingStar(p) {
     if (!p.active || liteMode) return;
 
-    drawGreyGlow(p, 0.73, 0.27, 0.08, 1.11);
-
-    if (p.linkAnim > 0) {
-      ctx.globalAlpha = p.linkAnim;
-      drawGreyGlow(p, 0.98, 0.585, 0.2, 1.11);
-      ctx.globalAlpha = 1;
-    }
+    ctx.globalAlpha = 0.28;
+    drawParticleDot(p, 0.85, 1);
+    ctx.globalAlpha = 1;
   }
 
   function drawConnectionLine(p, anchorX, anchorY, strength) {
@@ -974,7 +986,7 @@
     var alpha = 0.12 + 0.18 * strength;
 
     ctx.beginPath();
-    ctx.strokeStyle = "rgba(29, 29, 29, " + alpha + ")";
+    ctx.strokeStyle = "rgba(90, 90, 90, " + alpha + ")";
     ctx.lineWidth = 1;
     ctx.moveTo(anchorX, anchorY);
     ctx.lineTo(endX, endY);
@@ -1000,24 +1012,18 @@
     ctx.rect(0, 0, width, height);
     ctx.clip();
 
+    // Background layer: shooting stars sit behind everything else.
     for (i = 0; i < particles.length; i += 1) {
       p = particles[i];
+      if (!p.isStar || !p.active) continue;
       if (!isInsideSection(p.x, p.y, 0)) continue;
-      if (isInTextZone(p.x, p.y) && !p.isStar) continue;
-      if (p.isStar) {
-        drawShootingStar(p);
-      } else {
-        drawSoftParticle(p);
-      }
+      drawShootingStar(p);
     }
-
-    pruneRipples();
-    drawRipples();
 
     if (mouse.inHero && !isCursorInNavZone() && !liteMode) {
       for (k = 0; k < particles.length; k += 1) {
         p = particles[k];
-        if (p.isStar || !p.connected) continue;
+        if (p.isStar || (!(p.connected || p.linkAnim > 0.02))) continue;
 
         dx = cursor.x - p.x;
         dy = cursor.y - p.y;
@@ -1034,6 +1040,17 @@
         drawConnectionLine(p, anchorX, anchorY, strength);
       }
     }
+
+    for (i = 0; i < particles.length; i += 1) {
+      p = particles[i];
+      if (p.isStar) continue;
+      if (!isInsideSection(p.x, p.y, 0)) continue;
+      if (isInTextZone(p.x, p.y)) continue;
+      drawSoftParticle(p);
+    }
+
+    pruneRipples();
+    drawRipples();
 
     ctx.restore();
   }
