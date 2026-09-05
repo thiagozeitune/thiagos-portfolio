@@ -27,13 +27,16 @@
   var orbitMaxRadius = 100;
   var orbitAspect = 0.58; // < 1 = horizontal oval
   var orbitSpring = 0.04;
+  var approachSpring = 0.018;
   var orbitAngularBase = 0.016;
-  var orbitEngageSpeed = 0.04;
+  var orbitEngageSpeed = 0.022;
+  var spinBlendSpeed = 0.018;
   var maxOrbitSpeed = 1.1;
+  var approachMaxSpeed = 0.7;
   var orbitDamping = 0.9;
 
   var driftOrbit = 190;
-  var particleCount = 18;
+  var particleCount = 12;
   var shootingStarCount = 1;
   var restoreStrength = 0.004;
   var maxDriftSpeed = 0.11;
@@ -59,7 +62,7 @@
   var targetFps = 60;
   var liteTargetFps = 30;
   var fullParticleCount = particleCount;
-  var liteParticleCount = 10;
+  var liteParticleCount = 7;
 
   function syncLayoutCache() {
     var rect = hero.getBoundingClientRect();
@@ -143,10 +146,11 @@
   }
 
   function isInCenterZone(x, y) {
+    // Keep only a modest hole around the headline area.
     var cx = width * 0.5;
-    var cy = height * 0.5;
-    var rw = Math.min(width * 0.46, 620);
-    var rh = Math.min(height * 0.42, 320);
+    var cy = height * 0.48;
+    var rw = Math.min(width * 0.3, 380);
+    var rh = Math.min(height * 0.22, 160);
     var dx = (x - cx) / rw;
     var dy = (y - cy) / rh;
     return dx * dx + dy * dy <= 1;
@@ -156,16 +160,55 @@
     return isInTextZone(x, y) || isInCenterZone(x, y);
   }
 
-  function randomSpawnPoint() {
-    var pad = sectionBoundsPad + 10;
-    var roll = Math.random();
-    if (roll < 0.16) {
-      return { x: rand(width * 0.56, width - pad), y: rand(pad, height * 0.44) };
+  function spawnRegions() {
+    var pad = sectionBoundsPad + 14;
+    return [
+      // Top band, but stop before the nav cluster on the far right.
+      { x0: pad, x1: width * 0.72, y0: pad, y1: height * 0.26, weight: 1 },
+      { x0: pad, x1: width - pad, y0: height * 0.74, y1: height - pad, weight: 1 },
+      { x0: pad, x1: width * 0.26, y0: height * 0.2, y1: height * 0.8, weight: 1 },
+      { x0: width * 0.74, x1: width - pad, y0: height * 0.28, y1: height * 0.8, weight: 1 },
+      { x0: pad, x1: width * 0.42, y0: pad, y1: height * 0.42, weight: 1 },
+      // Upper-right exists, but lightly — avoid stacking under the menu.
+      { x0: width * 0.58, x1: width * 0.86, y0: height * 0.14, y1: height * 0.42, weight: 0.35 },
+      { x0: pad, x1: width * 0.42, y0: height * 0.58, y1: height - pad, weight: 1 },
+      { x0: width * 0.58, x1: width - pad, y0: height * 0.58, y1: height - pad, weight: 1 }
+    ];
+  }
+
+  function pickSpawnRegion(preferredIndex) {
+    var regions = spawnRegions();
+    var i;
+    var total = 0;
+    var roll;
+    var preferred;
+
+    preferred = regions[((preferredIndex % regions.length) + regions.length) % regions.length];
+    // Usually honor round-robin, but often skip the light upper-right region.
+    if (preferred.weight >= 1 || Math.random() < preferred.weight) return preferred;
+
+    for (i = 0; i < regions.length; i += 1) total += regions[i].weight;
+    roll = Math.random() * total;
+    for (i = 0; i < regions.length; i += 1) {
+      roll -= regions[i].weight;
+      if (roll <= 0) return regions[i];
     }
-    if (roll < 0.32) {
-      return { x: rand(pad, width * 0.44), y: rand(height * 0.56, height - pad) };
+    return regions[0];
+  }
+
+  function randomSpawnPoint(regionIndex) {
+    var r = pickSpawnRegion(regionIndex);
+    var x0 = Math.min(r.x0, r.x1);
+    var x1 = Math.max(r.x0, r.x1);
+    var y0 = Math.min(r.y0, r.y1);
+    var y1 = Math.max(r.y0, r.y1);
+    if (x1 - x0 < 8 || y1 - y0 < 8) {
+      return {
+        x: rand(sectionBoundsPad + 10, width - sectionBoundsPad - 10),
+        y: rand(sectionBoundsPad + 10, height - sectionBoundsPad - 10)
+      };
     }
-    return { x: rand(pad, width - pad), y: rand(pad, height - pad) };
+    return { x: rand(x0, x1), y: rand(y0, y1) };
   }
 
   function shouldReleaseOrbits() {
@@ -194,7 +237,7 @@
 
   function createRandomPositions(count) {
     var positions = [];
-    var minDist = Math.min(width, height) / (Math.sqrt(count) * 4.5);
+    var minDist = Math.min(width, height) / (Math.sqrt(count) * 3.2);
     var minDistSq = minDist * minDist;
     var i;
     var j;
@@ -205,12 +248,14 @@
     var ok;
     var dx;
     var dy;
+    var region;
 
     for (i = 0; i < count; i += 1) {
       attempts = 0;
       ok = false;
-      while (attempts < 55) {
-        point = randomSpawnPoint();
+      region = i;
+      while (attempts < 70) {
+        point = randomSpawnPoint(region + Math.floor(attempts / 8));
         x = point.x;
         y = point.y;
         attempts += 1;
@@ -228,8 +273,8 @@
       }
       if (!ok) {
         attempts = 0;
-        while (attempts < 80) {
-          point = randomSpawnPoint();
+        while (attempts < 90) {
+          point = randomSpawnPoint(i + attempts);
           x = point.x;
           y = point.y;
           attempts += 1;
@@ -241,7 +286,7 @@
       }
       if (!ok) {
         x = rand(20, width - 20);
-        y = rand(20, height * 0.16);
+        y = rand(20, height - 20);
       }
       positions.push({ x: x, y: y });
     }
@@ -312,7 +357,7 @@
     particles = [];
     var target = liteMode ? liteParticleCount : fullParticleCount;
     var count = Math.round(target * Math.min(1, width / 900));
-    count = Math.max(liteMode ? 8 : 14, count);
+    count = Math.max(liteMode ? 6 : 10, count);
     var positions = createRandomPositions(count);
     var i;
     var pos;
@@ -339,6 +384,7 @@
         orbitDirLocked: false,
         orbitSpinning: false,
         approachMaxDist: 0,
+        spinBlend: 0,
         orbitEngage: 0,
         returningHome: false,
         nextBlink: rand(10, 28),
@@ -458,6 +504,7 @@
     p.orbitEngage = 0;
     p.orbitDirLocked = false;
     p.orbitSpinning = false;
+    p.spinBlend = 0;
     p.approachMaxDist = 0;
     p.returningHome = true;
   }
@@ -473,6 +520,7 @@
 
     p.orbiting = true;
     p.orbitSpinning = false;
+    p.spinBlend = 0;
     p.returningHome = false;
     p.orbitAngle = Math.atan2(dy, dx);
     p.orbitRadius = Math.max(orbitMinRadius, Math.min(orbitMaxRadius, dist * 0.55 + preferred * 0.45));
@@ -549,22 +597,44 @@
     target = orbitTarget(p);
 
     if (!p.orbitSpinning) {
-      // Approximation: stay on the ray to the cursor — only close distance, no orbit yet.
-      p.orbitAngle = Math.atan2(dy, dx);
-      target = orbitTarget(p);
-      engage = Math.max(0.25, p.orbitEngage);
-      p.vx += (target.x - p.x) * orbitSpring * engage;
-      p.vy += (target.y - p.y) * orbitSpring * engage;
-
+      // Approximation: far out stay on the ray; near the ring, ease into spin.
       gap = Math.sqrt((target.x - p.x) * (target.x - p.x) + (target.y - p.y) * (target.y - p.y));
-      if (gap <= 8 || dist <= p.orbitRadius + 4) {
+      engage = Math.max(0.1, p.orbitEngage * 0.85);
+
+      if (gap >= 28) {
+        p.orbitAngle = Math.atan2(dy, dx);
+        p.spinBlend = 0;
+        target = orbitTarget(p);
+        p.vx += (target.x - p.x) * approachSpring * engage;
+        p.vy += (target.y - p.y) * approachSpring * engage;
+      } else {
+        p.spinBlend = Math.min(1, (28 - gap) / 28);
+        angularSpeed =
+          orbitAngularBase *
+          p.orbitDir *
+          p.spinBlend *
+          p.spinBlend *
+          0.55;
+        p.orbitAngle += angularSpeed;
+        target = orbitTarget(p);
+        p.vx += (target.x - p.x) * approachSpring * (0.55 + 0.45 * p.spinBlend);
+        p.vy += (target.y - p.y) * approachSpring * (0.55 + 0.45 * p.spinBlend);
+      }
+
+      if (gap <= 5 || dist <= p.orbitRadius + 2) {
         p.orbitSpinning = true;
+        p.spinBlend = Math.max(p.spinBlend || 0, 0.35);
       }
       return;
     }
 
-    // Orbit stage: advance angle and follow the oval.
-    angularSpeed = orbitAngularBase * p.orbitDir * (0.85 + orbitMaxRadius / Math.max(p.orbitRadius, orbitMinRadius) * 0.25);
+    // Orbit stage: finish blending angular speed, then follow the oval.
+    p.spinBlend = Math.min(1, (p.spinBlend || 0) + spinBlendSpeed);
+    angularSpeed =
+      orbitAngularBase *
+      p.orbitDir *
+      (0.85 + orbitMaxRadius / Math.max(p.orbitRadius, orbitMinRadius) * 0.25) *
+      (0.2 + 0.8 * p.spinBlend);
     p.orbitAngle += angularSpeed;
     target = orbitTarget(p);
 
@@ -737,7 +807,9 @@
       clampSpeed(
         p,
         p.orbiting
-          ? maxOrbitSpeed
+          ? p.orbitSpinning
+            ? maxOrbitSpeed
+            : approachMaxSpeed
           : p.returningHome
             ? maxOrbitSpeed * 0.55
             : maxDriftSpeed * (p.driftRate || 1)
